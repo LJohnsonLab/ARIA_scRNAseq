@@ -1,0 +1,188 @@
+---
+title: "Unsupervised Plots"
+subtitle: "PCA & UMAP"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r}
+
+suppressPackageStartupMessages({
+    library(tidyverse)
+    library(Seurat)
+    library(patchwork)
+    library(kableExtra)
+    })
+
+load("data/20250619-seurat_integrated_nFeat>2000.Rdata")
+
+
+```
+
+
+
+
+Slots in the subsetted Seurat object
+```{r}
+slotNames(seurat_integrated)
+```
+
+<details>
+  <summary>**Where are normalized values stored for sctransform?**</summary>
+
+
+The results of sctransfrom are stored in the "SCT" assay. You can learn more about multi-assay data and commands in Seurat [vignette](multimodal_vignette.html), [command cheat sheet](essential_commands.html#multi-assay-features), or [developer guide](https://github.com/satijalab/seurat/wiki/Assay).
+
+* `seurat_integrated[["SCT"]]$scale.data` contains the residuals (normalized values), and is used directly as input to PCA. Please note that this matrix is non-sparse, and can therefore take up a lot of memory if stored for all genes. To save memory, we store these values only for variable genes, by setting the return.only.var.genes = TRUE by default in the `SCTransform()` function call.
+* To assist with visualization and interpretation, we also convert Pearson residuals back to ‘corrected’ UMI counts. You can interpret these as the UMI counts we would expect to observe if all cells were sequenced to the same depth. If you want to see exactly how we do this, please look at the correct function [here](https://github.com/ChristophH/sctransform/blob/master/R/denoise.R).
+* The 'corrected' UMI counts are stored in `seurat_integrated[["SCT"]]$counts`. We store log-normalized versions of these corrected counts in `seurat_integrated[["SCT"]]$data`, which are very helpful for visualization.
+
+------
+</details>
+
+## Most variable genes across all cells in the integrated Seurat object
+```{r var_features, fig.height=5, fig.width=10}
+
+seurat_integrated <- FindVariableFeatures(seurat_integrated)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(seurat_integrated), 15)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(seurat_integrated)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+
+
+```
+
+## Linear dimensional reduction
+
+
+### PCA
+
+
+For the first principal components, Seurat outputs a list of genes with the most positive and negative loadings, representing modules of genes that exhibit either correlation (or anti-correlation) across single-cells in the dataset.
+
+```{r}
+# Run principal component analysis (PCA) on the integrated data
+# This reduces dimensionality and captures the major sources of variation
+seurat_integrated <- RunPCA(seurat_integrated)
+```
+
+Seurat provides several useful ways of visualizing both cells and features that define the PCA, including `VizDimReduction()`, `DimPlot()`, and `DimHeatmap()`
+
+```{r}
+#| fig-height: 10
+# Examine and visualize PCA results a few different ways
+print(seurat_integrated[['pca']], dims = 1:5, nfeatures = 5)
+VizDimLoadings(seurat_integrated, dims = 1:4, reduction = 'pca')
+```
+
+
+```{r}
+DimPlot(seurat_integrated, reduction = 'pca') 
+```
+
+
+
+### Determine the 'dimensionality' of the dataset
+
+ `DimHeatmap()` allows for easy exploration of the primary sources of heterogeneity in a dataset, and can be useful when trying to decide which PCs to include for further downstream analyses. Both cells and features are ordered according to their PCA scores. Setting `cells` to a number plots the 'extreme' cells on both ends of the spectrum, which dramatically speeds plotting for large datasets. Though clearly a supervised analysis, we find this to be a valuable tool for exploring correlated feature sets.
+ 
+ `DimHeatmap()` can support PCA selection, but it’s not a standalone method for choosing the number of significant PCs. It **helps you understand** what each PC is capturing **biologically**.
+
+<details> 
+<summary>__How to use `DimHeatmap()` for PC selection__</summary>
+
+1. **Explore PCs one by one**:
+
+2. **Look for clear expression patterns**:
+   Meaningful PCs will show:
+   - Groups of genes that vary together
+   - Blocks of cells with high vs low expression
+   - Expression patterns that correspond to known cell states or subtypes
+
+3. **Ignore PCs with noisy or random patterns**:
+   PCs that do **not** separate cells meaningfully (random or uniform expression) likely represent **noise** or **technical variation**.
+
+4. **Combine with ElbowPlot**:
+   Use `ElbowPlot()` to identify where the variance explained starts to level off, then validate the top PCs by checking if `DimHeatmap()` shows biologically meaningful gene patterns.
+
+</details>
+
+```{r multi-heatmap, fig.height=15, fig.width=9}
+DimHeatmap(seurat_integrated, dims = 1:20, cells = 500, balanced = TRUE)
+```
+
+To overcome the extensive technical noise in any single feature for scRNA-seq data, Seurat clusters cells based on their PCA scores, with each PC essentially representing a 'metafeature' that combines information across a correlated feature set. The top principal components therefore represent a robust compression of the dataset. However, how many components should we choose to include? 10? 20? 100?
+
+In [Macosko *et al*](http://www.cell.com/abstract/S0092-8674(15)00549-8), we implemented a resampling test inspired by the JackStraw procedure. While still available in Seurat [(see previous vignette)](https://satijalab.org/seurat/articles/pbmc3k_tutorial), this is a slow and computationally expensive procedure, and we is no longer routinely used in single cell analysis.
+
+An alternative heuristic method generates an 'Elbow plot': a ranking of principle components based on the percentage of variance explained by each one (`ElbowPlot()` function). In this example, we can observe an 'elbow' around PC14-18.
+
+
+```{r}
+# Generate an elbow plot to help choose the number of significant principal components
+# The "elbow" indicates where the added value of extra PCs begins to diminish
+ElbowPlot(seurat_integrated, ndims = 50)
+```
+
+
+### KNN
+```{r}
+# Construct a K-nearest neighbors graph based on the first 25 PCs
+# This graph is used for downstream clustering
+seurat_integrated <- FindNeighbors(seurat_integrated, dims = 1:25)
+```
+
+### Construct the shared nearest neighbor (SNN) graph
+```{r}
+# Perform graph-based clustering to identify cell groups
+# Resolution parameter (default) controls cluster granularity
+seurat_integrated <- FindClusters(seurat_integrated)
+```
+
+### UMAP embeddings
+
+```{r}
+# Compute a 2D UMAP embedding using the first 20 PCs
+# This provides a visual representation of the data structure
+seurat_integrated <- RunUMAP(seurat_integrated, dims = 1:20, verbose = FALSE)
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+#| fig-height: 6
+
+# Visualize the UMAP embedding with clusters labeled
+# Each point is a cell, colored by cluster
+d1 <- DimPlot(seurat_integrated, label = TRUE, repel = T) + theme(legend.position = "none") 
+d2 <- DimPlot(seurat_integrated, group.by = "orig.ident", label = F, alpha = 0.5) + ggtitle("")
+d1|d2
+```
+
+
+```{r}
+#| column: page
+#| fig-width: 12
+#| fig-height: 6
+a1 <- VlnPlot(seurat_integrated,features = "Cx3cr1", alpha = 0.6)+ theme(legend.position = "none")
+a2 <- FeaturePlot(seurat_integrated, min.cutoff = "q10",features = "Cx3cr1")
+a1+a2+plot_layout(widths = c(3.5,2), ncol = 2)
+```
+
+
+```{r}
+#| eval: false
+
+saveRDS(seurat_integrated, file = "data/20250620-seurat_integrated_UMAP_nFeat>600.Rds")
+```
+

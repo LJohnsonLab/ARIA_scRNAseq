@@ -1,0 +1,141 @@
+---
+title: "SCTransform & integration"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+suppressPackageStartupMessages({
+    library(tidyverse)
+    library(Seurat)
+    # BiocManager::install('glmGamPoi') 
+    library(glmGamPoi)
+    library(future)
+    library(compareGroups)
+    })
+
+
+### helper functions
+source("20250725-helper_functions.R")
+```
+
+
+## Subset cells with nFeat_RNA > 2000
+
+```{r}
+
+load ("data/20200620-list_of_Seurat_objects.Rdata")
+
+seurat_objects <- map(seurat_objects, \(x) subset(x, subset = nFeature_RNA > 2000))
+
+```
+
+```{r}
+
+features <- imap (seurat_objects, \(x, name) tibble(seurat_object = name,
+                                             n_features = x$nFeature_RNA,
+                                             ribo = PercentageFeatureSet(x, pattern = "^Rp[ls]"))) |> 
+    list_rbind()
+
+ggplot(features,aes(n_features,col=seurat_object))+
+    labs(y="", title = "Number of features /cell after subsetting")+
+    scale_x_continuous( " ", breaks = seq(0,12000,1000), 
+                       labels = scales::label_number(scale = 1/1000, suffix = "K"))+
+    density_decor()
+
+ggplot(features,aes(ribo,col=seurat_object))+
+    labs(y="", title = "ribo content /cell after subsetting")+
+    scale_x_continuous( " ", limits = c(0,30),
+                        labels = scales::label_number(scale = 1/1, suffix = "%"))+
+    density_decor()
+   
+
+```
+---
+
+__Number of cells (N) and features per cell (median [IQR]) in the subsetted dataset__
+
+```{r}
+#| column: page
+
+c1 <- compareGroups(seurat_object ~ n_features, features, 
+                    method = 2, max.ylev = 6)
+t1 <- createTable(c1, show.p.overall = F)
+export2md(t1, caption = "")
+```
+
+
+
+
+## Apply SCTransform
+
+Apply SCTransform normalization to each subsetted Seurat object in the list.
+
+
+
+
+
+```{r}
+#| eval: false
+
+seurat_objects <- map(seurat_objects, \(x) SCTransform(x))
+```
+
+## Integration
+
+### Select integration features
+
+## SCTransform-based integration of multiple Seurat objects
+
+1.  Identifies the top 2,000 highly variable genes across all Seurat objects to use for integration. These features should be common and informative for aligning datasets.
+
+2.  Prepares the `SCT` assays for integration. It calculates the necessary Pearson residuals and scales data based on the selected features. This must be done after SCTransform and before `FindIntegrationAnchors`.
+
+
+```{r}
+#| eval: false
+##################
+features <- SelectIntegrationFeatures(object.list = seurat_objects, nfeatures = 2000)
+
+# Prepare for integration
+seurat_objects <- PrepSCTIntegration(seurat_objects, anchor.features = features)
+```
+
+### Find anchors
+
+3.  Identifies anchors—pairs of cells from different datasets that are biologically similar. These are used to align the datasets during integration.
+
+
+
+```{r}
+#| eval: false
+# Find integration anchors
+anchors <- FindIntegrationAnchors(
+  object.list = seurat_objects,
+  normalization.method = "SCT",
+  reduction = "cca",
+  anchor.features = features
+)
+
+
+
+```
+
+###  Integrate the datasets
+
+4.  Performs the actual integration, combining all datasets into a single Seurat object where batch effects are minimized. Output is stored in a new `"integrated"` assay.
+
+```{r}
+#| eval: false
+seurat_integrated <- IntegrateData(
+  anchorset = anchors,
+  normalization.method = "SCT"
+)
+
+save(seurat_integrated,file ="data/20250619-seurat_integrated_nFeat>2000.Rdata")
+```
+

@@ -1,0 +1,95 @@
+---
+title: "Microglial subpopulations"
+subtitle: "Identification of Microglial Subpopulations"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+
+suppressPackageStartupMessages({
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(kableExtra)
+    })
+
+load("data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
+alldata$ribo_percent <- PercentageFeatureSet(alldata,assay = "SCT", pattern = "^Rp[ls]")
+
+```
+
+## UMAP
+
+Comparison of UMAPs previously annotated using ScType and clustered with Seurat. 
+
+```{r}
+#| column: page
+#| fig-width: 12
+Idents(alldata) <- alldata@meta.data$sctype_classification
+d1 <- DimPlot(alldata, label = TRUE, repel = T) + 
+    NoLegend() + ggtitle("ScType annotated")
+
+Idents(alldata) <- alldata@meta.data$seurat_clusters
+d2 <- DimPlot(alldata, label = TRUE, repel = T) + 
+    NoLegend() + ggtitle("Seurat clusters")
+
+d1|d2
+```
+
+## Subclustering of Microglial population based on `ScType`
+
+```{r}
+#| column: page
+#| fig-width: 12
+
+microglia <- subset(alldata, subset = sctype_classification =="Microglial cells")
+microglia@meta.data$jm = ifelse (microglia@meta.data$seurat_clusters%in%c("14","15","17","22","23"),microglia@meta.data$seurat_clusters,"bigblob")
+
+Idents(microglia) <- microglia@meta.data$jm
+d3 <- DimPlot(microglia, label = TRUE, repel = T) + 
+    NoLegend() + ggtitle("Only microglial cells")
+
+d4 <- FeaturePlot(microglia, features = c("ribo_percent"))
+
+d3|d4
+```
+
+Ribosomal Content Varies Across Microglial Subclusters
+
+## Cluster-specific markers
+```{r}
+markers <- FindAllMarkers(microglia, only.pos = TRUE)
+# Select top 5 for each cluster
+top5 <- markers |> 
+    group_by(cluster) |> 
+    top_n(5, avg_log2FC)
+
+kbl(top5) |> 
+    kable_styling("striped")
+```
+
+Feature plots indicated heterogeneity in ribosomal content among subclusters. However, when examining the top marker genes obtained from FindAllMarkers, there are no ribosomal genes among the most discriminative features. This suggests that while ribosomal content varies, it does not directly drive cluster identity at the transcriptional marker level.
+
+Possible cell populations present:  
+ * Cluster 10: T lymphocytes.   
+ * Cluster 11: OPCs?   
+ * Cluster 13: Pericytes/ Neurons ?  
+ * Cluster 12 ???  
+ * Cluster  9: Interferon-activated microglia ??  
+ 
+ ---
+ 
+ All those cluster appear in both treatment groups: 
+```{r}
+#| column: page
+#| fig-width: 12
+DimPlot(microglia, label = TRUE, repel = T, split.by = "type") + 
+    NoLegend() 
+```
+ 
+ 

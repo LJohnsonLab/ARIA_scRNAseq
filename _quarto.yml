@@ -1,0 +1,30 @@
+project:
+  type: book
+  output-dir: docs
+
+book:
+  title: "ARIA"
+  author: "JM Arbones"
+  date: "08/04/2025"
+  chapters:
+    - index.qmd
+    - 20250615-cellRanger.qmd
+    - 20250620-seuratObject.qmd
+    - 20250620-SCT&intehra.qmd
+    - 20250620-ymas.qmd
+    - 20250728-markers.qmd
+    - 20250620-ScType.qmd
+    - 20250728-microglia1.qmd
+    - references.qmd
+
+
+bibliography: references.bib
+
+format:
+  html:
+    theme: cosmo
+  pdf:
+    documentclass: scrreprt
+
+
+

@@ -1,0 +1,153 @@
+---
+title: "ScType"
+subtitle: "Cluster annotation-subsetted for cells > 2000 features"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# devtools::install_github("immunogenomics/presto")
+
+suppressPackageStartupMessages({
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(presto)
+library(kableExtra)
+    })
+
+
+```
+
+`ScType` is a computational method for automated selection of marker genes based merely on scRNA-seq data [@ianevski2022a]. `ScType` combines a large, curated marker gene database with a cell-type specificity scoring system to accurately assign cell identities. The ScType marker database integrates information from `CellMarker`, `PanglaoDB`, and manual curation to include 3,980 markers for 194 human cell types and 4,212 markers for 194 mouse cell types, along with both positive and negative markers across 17 tissues per species. The specificity score quantifies how uniquely a gene identifies a cell type within a tissue by considering its presence across multiple cell types, with higher scores reflecting greater specificity. This score is used to weight gene expression during annotation, enhancing the reliability of cell-type assignments.
+
+```{r}
+#| eval: false
+
+alldata <- readRDS("data/20250620-seurat_integrated_UMAP_nFeat>600.Rds")
+
+library(HGNChelper)
+library(openxlsx)
+source("https://raw.githubusercontent.com/IanevskiAleksandr/sc-type/master/R/sctype_wrapper.R")
+
+alldata <- run_sctype(alldata,
+                      assay = "SCT",
+                      scaled = F,
+                      known_tissue_type="Brain",
+                      custom_marker_file="https://raw.githubusercontent.com/IanevskiAleksandr/sc-type/master/ScTypeDB_full.xlsx",
+                      name="sctype_classification")
+
+save(alldata, file = "data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
+
+```
+
+```{r}
+
+
+load("data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
+
+alldata$ribo_percent <- PercentageFeatureSet(alldata,assay = "SCT", pattern = "^Rp[ls]")
+```
+## UMAP
+
+```{r}
+Idents(alldata) <- alldata@meta.data$sctype_classification
+DimPlot(alldata, label = TRUE, repel = T) + 
+    NoLegend()
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 12
+FeaturePlot(alldata, features = c("ribo_percent","nFeature_SCT","Malat1"),
+            split.by = "type")
+```
+
+
+```{r}
+#| column: page
+#| fig-width: 12
+#| fig-height: 8
+DimPlot(alldata, label = TRUE, repel = T, split.by = "orig.ident",
+        alpha = 0.5, ncol = 3) +
+    NoLegend()
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+DimPlot(alldata, label = TRUE, repel = T, split.by = "type",
+        alpha = 0.5) +
+    NoLegend()
+```
+
+## Cell markers
+
+### Microglia
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Cx3cr1", alpha = 0.01, y.max = 7,
+        split.by = "orig.ident")
+
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Tmem119",alpha = 0.01, y.max = 5, 
+        split.by = "orig.ident")
+
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Lpl",alpha = 0.01, y.max = 5, 
+        split.by = "orig.ident")
+
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Aif1",alpha = 0.01, y.max = 5, 
+        split.by = "orig.ident")
+
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "ribo_percent",alpha = 0.01, 
+        split.by = "orig.ident")
+
+```
+### Astrocytes
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Aldh1l1", alpha = 0.03, y.max = 8, 
+        split.by = "orig.ident")
+```
+
+### Oligodendrocyte
+
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Olig1", alpha = 0.03, 
+        split.by = "orig.ident")
+```
+
+
+```{r}
+#| column: page
+#| fig-width: 12
+VlnPlot(alldata,features = "Mog", alpha = 0.03, 
+        split.by = "orig.ident")
+```

@@ -1,0 +1,52 @@
+---
+title: "Find Markers"
+subtitle: "Finds markers (differentially expressed genes) for each of the UMAP blobs"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r}
+
+suppressPackageStartupMessages({
+    library(tidyverse)
+    library(Seurat)
+    library(kableExtra)
+    })
+
+load("data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
+
+
+```
+
+
+```{r}
+
+DimPlot(alldata, label = TRUE, repel = T, label.size = 5) + 
+    NoLegend() 
+```
+
+```{r}
+#| eval: false
+all_markers <- markers <- FindAllMarkers(alldata, only.pos = TRUE, densify = T)
+# write_csv(all_markers, file = "data/20250728-all_markers.csv")
+```
+
+
+```{r}
+markers <- read_csv("data/20250728-all_markers.csv")
+top50 <- markers |> 
+    group_by(cluster) |> 
+    top_n(50, avg_log2FC)
+
+
+kbl(top50) |> 
+    kable_styling("striped") |> 
+    scroll_box(height = "1000px")
+```
+

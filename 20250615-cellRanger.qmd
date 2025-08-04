@@ -1,0 +1,41 @@
+---
+title: "Cell Ranger"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+
+## Cell Ranger metrics
+```{r}
+
+suppressPackageStartupMessages({
+    library(tidyverse)
+    library(kableExtra)
+    })
+
+```
+
+
+
+```{r}
+#| column: page
+
+dataset.loc <- "~/Dropbox/SyncBriefcase/LAB/UK/scRNA_Akhil/cellRanger_data"
+metrics_files <- list.files(path = dataset.loc, pattern = "metrics_summary",
+                      full.names = T, recursive = T)
+metrics <- map(metrics_files,
+               read.csv) |> 
+    list_rbind() |> 
+    t() |> 
+    as.data.frame() |> 
+    set_names(str_split_i(metrics_files,"/",10))
+
+kbl(metrics) |> 
+  kable_styling("striped")
+
+```
+
