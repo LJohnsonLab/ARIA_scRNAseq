@@ -24,11 +24,22 @@ load("data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
 
 ```
 
+## UMAP
+
+Comparison of UMAPs previously annotated using ScType and clustered with Seurat.
 
 ```{r}
+#| column: page
+#| fig-width: 12
 
-DimPlot(alldata, label = TRUE, repel = T, label.size = 5) + 
+d1 <- DimPlot(alldata, label = TRUE, repel = T, label.size = 5) + 
+    NoLegend()
+
+Idents(alldata) <- alldata$sctype_classification
+d2 <- DimPlot(alldata, label = TRUE, repel = T, label.size = 4,) + 
     NoLegend() 
+
+d1|d2
 ```
 
 ```{r}
@@ -37,15 +48,71 @@ all_markers <- markers <- FindAllMarkers(alldata, only.pos = TRUE, densify = T)
 # write_csv(all_markers, file = "data/20250728-all_markers.csv")
 ```
 
+## Top marker genes per cluster 
+
+### Dot plot
+
+Dot plot showing the scaled expression of the top five marker genes per cluster in the integrated dataset. Clusters correspond to Seurat-defined groups (`seurat_clusters`) and are ordered according to their assigned cell type (`sctype_classification`). 
+The size of each dot represents the percentage of cells within a cluster expressing the gene, while the color intensity indicates the average expression level. Cluster labels (X-axis) are color-coded by `sctype_classification` to visually group clusters belonging to the same cell type.
 
 ```{r}
+#| column: page
+#| fig-height: 25
+#| fig-width: 12
+
+
 markers <- read_csv("data/20250728-all_markers.csv")
-top50 <- markers |> 
+top5 <- markers |> 
+    filter(pct.1>0.3) |> 
     group_by(cluster) |> 
-    top_n(50, avg_log2FC)
+    top_n(5, avg_log2FC)
 
 
-kbl(top50) |> 
+
+# Idents set to seurat_cluster
+Idents(alldata) <- alldata$seurat_clusters
+
+# Map seurat_clusters to sctype_classification
+label_map <- alldata@meta.data  |> 
+  select(seurat_clusters, sctype_classification) |> 
+  distinct()
+
+# Reorder seurat_cluster based on sctype_classification
+seurat_clusters_ordered <- label_map |>
+  arrange(sctype_classification) |>
+  pull(seurat_clusters)
+
+# Generate distinct colors automatically (1 color per sctype_classification)
+n_classes <- length(unique(label_map$sctype_classification))
+auto_colors <- setNames(
+  scales::hue_pal()(n_classes),
+  unique(label_map$sctype_classification)
+)
+
+# Make the DotPlot
+
+Idents(alldata) = factor(alldata$seurat_clusters,
+                         levels = seurat_clusters_ordered)
+DotPlot(alldata, features = top5$gene) + 
+    coord_flip()+
+# Apply color to axis text
+    theme(
+  axis.text.x = element_text(
+      size=14,
+    colour = setNames(
+      auto_colors[label_map$sctype_classification],
+      label_map$seurat_cluster
+    )[levels(Idents(alldata))]
+  )
+)
+
+
+
+```
+
+### List of the top five marker genes for each Seurat cluster
+```{r}
+kbl(top5) |> 
     kable_styling("striped") |> 
     scroll_box(height = "1000px")
 ```
