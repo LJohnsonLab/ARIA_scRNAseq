@@ -1,5 +1,5 @@
 ---
-title: "Microglial subpopulations"
+title: "Microglial subpopulations 1"
 subtitle: "Identification of Microglial Subpopulations"
 date: today
 toc-depth: 4
@@ -55,9 +55,7 @@ d1|d2
 #| fig-width: 12
 
 microglia <- subset(alldata, subset = sctype_classification =="Microglial cells", idents = alldata$seurat_clusters)
-#microglia$jm = if_else (microglia$seurat_clusters%in%c("14","15","17","22","23"),microglia$seurat_clusters,"bigblob")
-
-#Idents(microglia) <- microglia$jm
+# save(microglia, file = "data/20250809-microglia1.Rdata")
 d3 <- DimPlot(microglia, label = TRUE, repel = T, label.size = 6) + 
     NoLegend() + ggtitle("Only microglial cells")
 
@@ -84,11 +82,14 @@ DimPlot(microglia, label = TRUE, repel = T, split.by = "type", label.size = 6) +
 cell <- microglia@meta.data |> 
     group_by(type, seurat_clusters) |> 
     summarize (n=n()) |> 
-    #mutate(percent = round(n/sum(n)*100,1)) |> 
-    pivot_wider(names_from = type, values_from = n)
+    pivot_wider(names_from = type, values_from = n) |> 
+    mutate(Adu_percent = round(Adu/sum(Adu)*100,1),
+           IgG_percent = round(IgG/sum(IgG)*100,1))
 
-kbl (cell, caption = "Number of cells per cluster") |> 
-    kable_styling("striped")
+kbl (cell, caption = "Cells per cluster",
+     col.names =c("Cluster",rep(c("Adu","IgG"),2))) |> 
+    kable_styling("striped") |> 
+    add_header_above(c(" ","cells (n)"=2,"cells (%)" =2), bold = T)
 ```
 
 
