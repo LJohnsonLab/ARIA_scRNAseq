@@ -254,7 +254,7 @@
     "href": "20250809-microglia2.html",
     "title": "9  Microglial subpopulations x sample",
     "section": "",
-    "text": "9.1 Cluster summary\nConsider merging clusters 0 & 1. Both look like classic homeostatic microglia.\nConsider merging clusters 2/10/14. All seem DAM with 2 in hypoxia- and lysosome-enriched myeloid state, 10 skewing oxidative stress (Hmox1/Nqo1) and 14 more phagocytic/clearance (Clec7a/Axl) &gt;&gt;&gt; those differences should appear when we do the DE pseudobulk.",
+    "text": "9.1 Cluster summary\nConsider merging clusters 6/10/14. All seem DAM with 2 in hypoxia- and lysosome-enriched myeloid state, 10 skewing towards oxidative stress (Hmox1/Nqo1) and 14 more phagocytic/clearance (Clec7a/Axl) &gt;&gt;&gt; those differences should appear when we do the DE pseudobulk.",
     "crumbs": [
       "<span class='chapter-number'>9</span>  <span class='chapter-title'>Microglial subpopulations x sample</span>"
     ]
@@ -264,7 +264,7 @@
     "href": "20250809-microglia2.html#cluster-summary",
     "title": "9  Microglial subpopulations x sample",
     "section": "",
-    "text": "Cluster\nLikely Cell Type / State\n\n\n\n\n0\nHomeostatic microglia\n\n\n1\nHomeostatic microglia (alt. subset)\n\n\n2\nActivated/Disease-Associated Microglia (DAM)\n\n\n4\nActivated/stress-response microglia\n\n\n6\nDAM-like / interferon-response microglia\n\n\n8\nMicroglia with antigen-presentation signature\n\n\n10\nDAM / oxidative stress microglia\n\n\n12\nPerivascular macrophages / infiltrating myeloid cells\n\n\n14\nDAM-like subset / phagocytic microglia\n\n\n15\nT cells\n\n\n17\nMixed/garbage cluster\n\n\n22\nBorder-associated macrophages (BAMs)/activated microglia.\n\n\n23\nVascular-associated cells (pericytes/endothelial)\n\n\n27\nRare myeloid subset",
+    "text": "Cluster\nLikely Cell Type / State\n\n\n\n\n0\nInflammatory / NF-κB–Driven Microglia\n\n\n1\nResolution / Repair-Oriented Microglia\n\n\n2\nHypoxia-Adapted / Phagocytic (clearance) Microglia\n\n\n4\nHomeostatic microglia\n\n\n6\nDAM-like / interferon-response microglia\n\n\n8\nEarly-Activation / Primed Microglia\n\n\n10\nDAM / oxidative stress microglia\n\n\n12\nHomeostatic or early-activated microglia. Includes motility/migration genes\n\n\n14\nDAM-like subset / phagocytic microglia\n\n\n15\nT cells\n\n\n17\nMixed/garbage cluster\n\n\n22\nBorder-associated macrophages (BAMs)/activated microglia.\n\n\n23\nVascular-associated cells (pericytes/endothelial)\n\n\n27\nProliferating Microglia",
     "crumbs": [
       "<span class='chapter-number'>9</span>  <span class='chapter-title'>Microglial subpopulations x sample</span>"
     ]

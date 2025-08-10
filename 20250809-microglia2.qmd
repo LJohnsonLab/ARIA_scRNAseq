@@ -27,20 +27,20 @@ load("data/20250809-microglia1.Rdata")
 
 | Cluster | Likely Cell Type / State                              |
 |---------|-------------------------------------------------------|
-| 0       | Homeostatic microglia                                 |
-| 1       | Homeostatic microglia (alt. subset)                   |
-| 2       | Activated/Disease-Associated Microglia (DAM)          |
-| 4       | Activated/stress-response microglia                   |
+| 0       | Inflammatory / NF-κB–Driven Microglia                                 |
+| 1       | Resolution / Repair-Oriented Microglia                   |
+| 2       | Hypoxia-Adapted / Phagocytic (clearance) Microglia          |
+| 4       | Homeostatic microglia                   |
 | 6       | DAM-like / interferon-response microglia              |
-| 8       | Microglia with antigen-presentation signature         |
+| 8       | Early-Activation / Primed Microglia         |
 | 10      | DAM / oxidative stress microglia                      |
-| 12      | Perivascular macrophages / infiltrating myeloid cells |
+| 12      | Homeostatic or early-activated microglia. Includes motility/migration genes |
 | 14      | DAM-like subset / phagocytic microglia                |
 | 15      | T cells                                               |
 | 17      | Mixed/garbage cluster                                 |
 | 22      | Border-associated macrophages (BAMs)/activated microglia.                                 |
 | 23      | Vascular-associated cells (pericytes/endothelial)     |
-| 27      | Rare myeloid subset                                   |
+| 27      | Proliferating Microglia                                   |
 
 ```{r}
 DimPlot(microglia, label = TRUE, repel = T, label.size = 9) + 
@@ -48,9 +48,9 @@ DimPlot(microglia, label = TRUE, repel = T, label.size = 9) +
 ```
 
 
-_Consider merging clusters 0 & 1. Both look like classic homeostatic microglia._  
 
-_Consider merging clusters 2/10/14. All seem DAM with 2 in hypoxia- and lysosome-enriched myeloid state, 10 skewing oxidative stress (Hmox1/Nqo1) and 14 more phagocytic/clearance (Clec7a/Axl) >>> those differences should appear when we do the DE pseudobulk._
+
+_Consider merging clusters 6/10/14. All seem DAM with 2 in hypoxia- and lysosome-enriched myeloid state, 10 skewing towards oxidative stress (Hmox1/Nqo1) and 14 more phagocytic/clearance (Clec7a/Axl) >>> those differences should appear when we do the DE pseudobulk._
 
 
 ```{r}
