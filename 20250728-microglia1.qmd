@@ -455,18 +455,6 @@ top <- markers |>
 # cat(top, sep = ",")
 ```
 
-#### Cluster 1
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 1) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
 
 **homeostatic microglia–enriched cluster**, with some immune trafficking receptors and neuronal-interaction genes.
 
