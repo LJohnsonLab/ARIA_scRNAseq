@@ -248,5 +248,35 @@
     "crumbs": [
       "<span class='chapter-number'>8</span>  <span class='chapter-title'>Microglial subpopulations 1</span>"
     ]
+  },
+  {
+    "objectID": "20250809-microglia2.html",
+    "href": "20250809-microglia2.html",
+    "title": "9  Microglial subpopulations x sample",
+    "section": "",
+    "text": "9.1 Cluster summary\nConsider merging clusters 0 & 1. Both look like classic homeostatic microglia.\nConsider merging clusters 2/10/14. All seem DAM with 2 in hypoxia- and lysosome-enriched myeloid state, 10 skewing oxidative stress (Hmox1/Nqo1) and 14 more phagocytic/clearance (Clec7a/Axl) &gt;&gt;&gt; those differences should appear when we do the DE pseudobulk.",
+    "crumbs": [
+      "<span class='chapter-number'>9</span>  <span class='chapter-title'>Microglial subpopulations x sample</span>"
+    ]
+  },
+  {
+    "objectID": "20250809-microglia2.html#cluster-summary",
+    "href": "20250809-microglia2.html#cluster-summary",
+    "title": "9  Microglial subpopulations x sample",
+    "section": "",
+    "text": "Cluster\nLikely Cell Type / State\n\n\n\n\n0\nHomeostatic microglia\n\n\n1\nHomeostatic microglia (alt. subset)\n\n\n2\nActivated/Disease-Associated Microglia (DAM)\n\n\n4\nActivated/stress-response microglia\n\n\n6\nDAM-like / interferon-response microglia\n\n\n8\nMicroglia with antigen-presentation signature\n\n\n10\nDAM / oxidative stress microglia\n\n\n12\nPerivascular macrophages / infiltrating myeloid cells\n\n\n14\nDAM-like subset / phagocytic microglia\n\n\n15\nT cells\n\n\n17\nMixed/garbage cluster\n\n\n22\nBorder-associated macrophages (BAMs)/activated microglia.\n\n\n23\nVascular-associated cells (pericytes/endothelial)\n\n\n27\nRare myeloid subset",
+    "crumbs": [
+      "<span class='chapter-number'>9</span>  <span class='chapter-title'>Microglial subpopulations x sample</span>"
+    ]
+  },
+  {
+    "objectID": "20250809-microglia2.html#cluster-by-cluster-comparison",
+    "href": "20250809-microglia2.html#cluster-by-cluster-comparison",
+    "title": "9  Microglial subpopulations x sample",
+    "section": "9.2 Cluster-by-cluster comparison",
+    "text": "9.2 Cluster-by-cluster comparison\nRelative abundance of each microglial Seurat-defined cluster in individual samples and compared proportions between the Aducanumab-treated and IgG control groups.\nFor each mouse, the percentage of cells in a given cluster was calculated after excluding clusters identified as mixed/garbage (cluster 17), T-cells (cluster 15) or vascular-associated (cluster 23)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nAdu\nIgG\np.overall\n\n\n\n\n\nN=3\nN=3\n\n\n\n0\n19.9 [18.7;21.2]\n23.1 [22.7;23.6]\n0.127\n\n\n1\n14.3 [14.3;14.5]\n18.7 [17.4;19.3]\n0.046\n\n\n2\n17.1 [16.4;18.2]\n14.3 [13.4;14.4]\n0.050\n\n\n4\n11.5 [11.3;12.6]\n11.6 [10.6;12.8]\n0.827\n\n\n6\n9.70 [8.95;10.5]\n8.90 [8.90;9.85]\n0.825\n\n\n8\n7.60 [7.35;7.75]\n7.70 [7.20;8.05]\n0.827\n\n\n10\n6.90 [6.35;7.80]\n6.70 [6.65;7.45]\n0.827\n\n\n12\n6.00 [5.65;6.75]\n4.00 [3.70;5.00]\n0.184\n\n\n14\n3.70 [3.25;3.70]\n2.70 [2.60;3.05]\n0.121\n\n\n22\n1.40 [1.30;1.55]\n0.70 [0.70;1.15]\n0.268\n\n\n27\n0.50 [0.40;0.65]\n0.40 [0.35;0.45]\n0.500\n\n\n\n\n\n\n\nValues are median % of microglia in that cluster per sample, with IQR.\np.overall: Mann-Whitney p-value",
+    "crumbs": [
+      "<span class='chapter-number'>9</span>  <span class='chapter-title'>Microglial subpopulations x sample</span>"
+    ]
   }
 ]
