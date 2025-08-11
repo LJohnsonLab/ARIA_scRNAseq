@@ -2,6 +2,7 @@
 title: "Find Markers"
 subtitle: "Finds markers (differentially expressed genes) for each of the UMAP blobs"
 date: today
+toc-depth: 4
 embed-resources: true
 execute: 
   warning: false
@@ -115,5 +116,124 @@ DotPlot(alldata, features = top5$gene) +
 kbl(top5) |> 
     kable_styling("striped") |> 
     scroll_box(height = "1000px")
+```
+
+### Upset chart
+
+The UpSet chart visualizes the overlaps in marker genes between the different **Seurat clusters** identified by `FindAllMarkers` (~Venn diagram for many sets).
+
+* **Horizontal bars** on the left show the *total number* of unique marker genes for each individual cluster.
+* **Vertical bars** at the top quantify the *size of each intersection*—that is, how many genes are shared by the specific combination of clusters highlighted by the connected black dots below.
+* **Single black dots** (no connecting lines) indicate marker genes unique to a single cluster.
+* **Multiple connected dots** indicate sets of clusters that share the same marker genes; the connecting lines trace which clusters are part of the intersection.
+* A **taller vertical bar** means a larger number of genes are shared in that particular combination.
+* Conversely, **shorter bars** correspond to smaller overlaps.
+
+In biological terms,
+
+* Large overlaps between clusters may indicate closely related cell states or subtypes—perhaps reflecting transitional phenotypes, activation states, or technical resolution limits of clustering.
+* Small or absent overlaps suggest distinct transcriptional programs, supporting the idea that the clusters represent separate cell types or states.
+
+
+```{r}
+#| column: page
+#| fig-width: 12
+#| fig-height: 10
+
+library(UpSetR)
+
+all_markers <- read_csv("/Users/arbones/Dropbox/SyncBriefcase/LAB/UK/scRNA_Akhil/Analysis/Seurat/data/20250728-all_markers.csv")
+
+mark <- markers |> 
+    group_by(cluster) |> 
+    summarise(genes = list(unique(gene)))
+
+# Convert to a named list
+mark_list <- setNames(mark$genes, mark$cluster)
+upset(fromList(mark_list),order.by = "freq", keep.order = T,
+      nsets = 31, nintersects = 40,
+      mainbar.y.label = "Common genes\nbetween clusters",
+      sets.x.label = "Gene Markers per cluster",
+      point.size = 3,
+      mb.ratio = c(0.4,0.6),
+      text.scale = 1.8)
+```
+
+### Violin plots
+
+Normalized expression values from the SCT assay in your Seurat object for the marker genes 
+
+The SCT assay stores log-normalized residual expression values from SCTransform. Values are continuous and typically centered around 0
+
+```{r}
+#| column: screen
+#| fig-width: 15
+#| fig-height: 6
+
+library(gtable)
+library(grid)
+library(ggtext)
+library(ggtext) # needed for colored axis labels
+
+genes_of_interest <- c("P2ry12","Trem2","Clec7a","Mrc1","Cd3e","sct_Cd8a",
+                       "Ptprc","sct_Aldh1l1","Aldoc","Mog",
+                       "Olig2","Pdgfra","Ttr","Ccdc153","sct_Slc47a1","Flt1","Emcn",
+                       "sct_Col1a2","sct_Bgn","Vtn","Kcnj8","Dcx","Snap25","Rbfox3")
+violin_data <- FetchData(alldata, c(genes_of_interest,"seurat_clusters"), assay = "SCT")
+violin_data_long <- violin_data  |> 
+    pivot_longer(-seurat_clusters) |> 
+    mutate(seurat_clusters = fct_rev(seurat_clusters),
+           name = factor(name, levels = genes_of_interest))
+
+# Get the default ggplot discrete colors
+cluster_levels <- levels(violin_data_long$seurat_clusters)
+palette_colors <- scales::hue_pal()(length(cluster_levels))
+names(palette_colors) <- cluster_levels
+
+# Create colored axis labels (HTML span with color)
+axis_labels <- purrr::map2_chr(cluster_levels, palette_colors,
+                               ~sprintf("<span style='color:%s'>%s</span>", .y, .x))
+
+p <- ggplot(violin_data_long, aes(x = seurat_clusters, y = value, fill = seurat_clusters)) +
+    geom_violin(aes(color = seurat_clusters),
+                scale = "width", trim = TRUE, adjust = 1, show.legend = FALSE) +
+    coord_flip() +
+    scale_fill_manual(values = palette_colors) +
+    scale_color_manual(values = palette_colors) +
+    facet_wrap(~name, scales = "free_x", nrow = 1) +
+    theme_minimal() +
+    labs (x = "Cluster", y = "Expression Levels")+
+    theme(
+        legend.position = "left",
+        axis.text.y = element_markdown(size = 12),
+        axis.text.x = element_text(size = 6),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        strip.text = element_text(size=11, face = "italic")
+    ) +
+    scale_x_discrete(labels = axis_labels)
+
+# Convert ggplot object to grob (graphical object)
+g <- ggplotGrob(p)
+
+# Find all the left axis grobs (y-axis elements)
+axis_grobs <- which(grepl("axis-l", g$layout$name))
+
+# Remove y-axis text from all but the first facet
+
+invisible(
+  map(axis_grobs, function(i) {
+      # The first facet left axis is named 'axis-l-1-1'
+    if (g$layout[i, "name"] != "axis-l-1-1") {
+      g$grobs[[i]] <<- nullGrob()
+    }
+  })
+)
+
+# Draw the modified plot
+grid.newpage()
+grid.draw(g)
+
+
 ```
 
