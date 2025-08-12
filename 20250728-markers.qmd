@@ -6,6 +6,7 @@ toc-depth: 4
 embed-resources: true
 execute: 
   warning: false
+  echo: false
 editor_options: 
   chunk_output_type: console
 ---
@@ -20,12 +21,20 @@ suppressPackageStartupMessages({
     library(kableExtra)
     })
 
-load("data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
+
+load("data/20250812-alldata_sctype_annotated_CHLOE.Rdata")
 
 
 ```
 
-## UMAP
+Seurat object created by Chloe using the code from the previous documents
+```{r}
+alldata
+```
+
+## All cells 
+
+### UMAP
 
 Comparison of UMAPs previously annotated using ScType and clustered with Seurat.
 
@@ -45,121 +54,13 @@ d1|d2
 
 ```{r}
 #| eval: false
-all_markers <- markers <- FindAllMarkers(alldata, only.pos = TRUE, densify = T)
-# write_csv(all_markers, file = "data/20250728-all_markers.csv")
-```
-
-## Top marker genes per cluster 
-
-### Dot plot
-
-Dot plot showing the scaled expression of the top five marker genes per cluster in the integrated dataset. Clusters correspond to Seurat-defined groups (`seurat_clusters`) and are ordered according to their assigned cell type (`sctype_classification`). 
-The size of each dot represents the percentage of cells within a cluster expressing the gene, while the color intensity indicates the average expression level. Cluster labels (X-axis) are color-coded by `sctype_classification` to visually group clusters belonging to the same cell type.
-
-```{r}
-#| column: page
-#| fig-height: 25
-#| fig-width: 12
-
-
-markers <- read_csv("data/20250728-all_markers.csv")
-top5 <- markers |> 
-    filter(pct.1>0.3) |> 
-    group_by(cluster) |> 
-    top_n(5, avg_log2FC)
-
-
-
-# Idents set to seurat_cluster
 Idents(alldata) <- alldata$seurat_clusters
-
-# Map seurat_clusters to sctype_classification
-label_map <- alldata@meta.data  |> 
-  select(seurat_clusters, sctype_classification) |> 
-  distinct()
-
-# Reorder seurat_cluster based on sctype_classification
-seurat_clusters_ordered <- label_map |>
-  arrange(sctype_classification) |>
-  pull(seurat_clusters)
-
-# Generate distinct colors automatically (1 color per sctype_classification)
-n_classes <- length(unique(label_map$sctype_classification))
-auto_colors <- setNames(
-  scales::hue_pal()(n_classes),
-  unique(label_map$sctype_classification)
-)
-
-# Make the DotPlot
-
-Idents(alldata) = factor(alldata$seurat_clusters,
-                         levels = seurat_clusters_ordered)
-DotPlot(alldata, features = top5$gene) + 
-    coord_flip()+
-# Apply color to axis text
-    theme(
-  axis.text.x = element_text(
-      size=14,
-    colour = setNames(
-      auto_colors[label_map$sctype_classification],
-      label_map$seurat_cluster
-    )[levels(Idents(alldata))]
-  )
-)
-
-
-
+DefaultAssay(alldata) <- "integrated"
+all_markers <- markers <- FindAllMarkers(alldata, only.pos = TRUE, densify = T)
+# write_csv(all_markers, file = "data/20250812-all_markers.csv")
 ```
 
-### List of the top five marker genes for each Seurat cluster
-```{r}
-kbl(top5) |> 
-    kable_styling("striped") |> 
-    scroll_box(height = "1000px")
-```
-
-### Upset chart
-
-The UpSet chart visualizes the overlaps in marker genes between the different **Seurat clusters** identified by `FindAllMarkers` (~Venn diagram for many sets).
-
-* **Horizontal bars** on the left show the *total number* of unique marker genes for each individual cluster.
-* **Vertical bars** at the top quantify the *size of each intersection*—that is, how many genes are shared by the specific combination of clusters highlighted by the connected black dots below.
-* **Single black dots** (no connecting lines) indicate marker genes unique to a single cluster.
-* **Multiple connected dots** indicate sets of clusters that share the same marker genes; the connecting lines trace which clusters are part of the intersection.
-* A **taller vertical bar** means a larger number of genes are shared in that particular combination.
-* Conversely, **shorter bars** correspond to smaller overlaps.
-
-In biological terms,
-
-* Large overlaps between clusters may indicate closely related cell states or subtypes—perhaps reflecting transitional phenotypes, activation states, or technical resolution limits of clustering.
-* Small or absent overlaps suggest distinct transcriptional programs, supporting the idea that the clusters represent separate cell types or states.
-
-
-```{r}
-#| column: page
-#| fig-width: 12
-#| fig-height: 10
-
-library(UpSetR)
-
-all_markers <- read_csv("/Users/arbones/Dropbox/SyncBriefcase/LAB/UK/scRNA_Akhil/Analysis/Seurat/data/20250728-all_markers.csv")
-
-mark <- markers |> 
-    group_by(cluster) |> 
-    summarise(genes = list(unique(gene)))
-
-# Convert to a named list
-mark_list <- setNames(mark$genes, mark$cluster)
-upset(fromList(mark_list),order.by = "freq", keep.order = T,
-      nsets = 31, nintersects = 40,
-      mainbar.y.label = "Common genes\nbetween clusters",
-      sets.x.label = "Gene Markers per cluster",
-      point.size = 3,
-      mb.ratio = c(0.4,0.6),
-      text.scale = 1.8)
-```
-
-### Violin plots
+### Top marker genes per cluster 
 
 Normalized expression values from the SCT assay in your Seurat object for the marker genes 
 
@@ -236,4 +137,1153 @@ grid.draw(g)
 
 
 ```
+
+## Cleaned dataset 
+
+After profound contemplation, the committee of experts decided to eliminate clusters 18, 21, 30, and 31 based on the markers represented in the violin plot.
+
+```{r}
+Idents(alldata) <- alldata$seurat_clusters
+alldata_clean <- subset(alldata, idents = c(18,21,30,31), invert = T)
+
+```
+
+### UMAP
+```{r}
+#| column: page
+#| fig-width: 12
+
+d1 <- DimPlot(alldata_clean, label = TRUE, repel = T, label.size = 5) + 
+    NoLegend()
+
+Idents(alldata_clean) <- alldata_clean$sctype_classification
+d2 <- DimPlot(alldata_clean, label = TRUE, repel = T, label.size = 4,) + 
+    NoLegend() 
+
+d1|d2
+```
+
+
+### Marker genes (chatGPT 5)
+
+```{r}
+markers <- read_csv("data/20250812-all_markers.csv")
+```
+
+
+For each Seurat cluster, the top differentially expressed genes were selected based on two criteria:  
+1. The gene had to be expressed in more than 30% of the cells in the cluster (pct.1 > 0.3), ensuring that selected genes represent markers broadly expressed within the cluster rather than being driven by rare subpopulations.  
+
+2. Among those genes, we ranked by the average log₂ fold change (avg_log2FC) relative to all other clusters and selected the top 20 genes with the highest positive fold change. This favors genes with the most specific and robust upregulation in the cluster of interest.
+
+#### Cluster 0 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 0) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell        | Subtype                        | Notes                                                                        |
+| -------- | ----------- | ------------------------------ | ---------------------------------------------------------------------------- |
+| Nfkbiz   | microglia   | activated/pro-inflammatory     | NF-κB regulator induced by TLR signaling; enriched in LPS/DAM microglia.     |
+| Bcl2a1b  | microglia   | activated/pro-survival         | Anti-apoptotic BCL2 family; high in myeloid cells under inflammation.        |
+| Tnf      | microglia   | activated/pro-inflammatory     | Canonical cytokine from activated microglia; drives NF-κB responses.         |
+| Bcl2a1d  | microglia   | activated/pro-survival         | Myeloid-biased anti-apoptotic factor; up in inflammatory states.             |
+| Mapkapk2 | microglia   | stress/p38-MK2 pathway         | p38 target regulating TNF/IL-1β mRNA stability in myeloid cells.             |
+| Ier3     | microglia   | immediate-early activated      | Early stress/immune response gene induced by NF-κB.                          |
+| Cd14     | microglia   | activated/DAM                  | Myeloid LPS co-receptor; elevated in DAM/activated microglia.                |
+| Ccrl2    | microglia   | activated/chemokine-responsive | Atypical chemokine receptor in myeloid lineages; rises with activation.      |
+| Il1b     | microglia   | activated/pro-inflammatory     | Hallmark cytokine of inflammatory microglia.                                 |
+| Rel      | microglia   | activated/NF-κB                | c-Rel NF-κB subunit; immune-cell biased activation marker.                   |
+| Mir155hg | microglia   | activated/DAM                  | Host gene for miR-155; strong in activated microglia/macrophages.            |
+| Dennd4a  | microglia   | activated/vesicle trafficking  | Rab10 GEF; broad gene but induced in myeloid activation and trafficking.     |
+| Cd86     | microglia   | antigen-presenting             | Costimulatory molecule up in MHC-II⁺ microglia.                              |
+| Rab7b    | microglia   | activated/endolysosomal        | Macrophage-enriched small GTPase modulating TLR trafficking.                 |
+| Myo1e    | microglia   | activated/cytoskeletal         | Myosin 1e enriched in myeloid cells; supports phagocytosis.                  |
+| Osbpl8   | microglia   | lipid-handling/DAM             | Oxysterol-binding protein involved in cholesterol/LDL trafficking.           |
+| Whrn     | neuron      | unspecified neuron             | Scaffolding protein (whirlin); neuronal/sensory enrichment relative to glia. |
+| Pdgfb    | endothelial | capillary/vascular             | Endothelial-derived PDGFB recruits PDGFRβ⁺ pericytes; vascular marker.       |
+| Bcl2l11  | microglia   | stress/apoptosis-prone         | Pro-apoptotic BIM; induced by cytokine stress in myeloid cells.              |
+| Cd180    | lymphocyte  | B cell                         | RP105; B-cell marker rarely seen in brain, suggests infiltrating B cells.    |
+
+
+Most genes point to activated microglia with a pro-inflammatory/DAM profile (NF-κB, TLR, cytokine, lipid-handling, and endolysosomal programs). One clear vascular marker (Pdgfb) indicates endothelial signal. Cd180 suggests a minor B-cell presence. Whrn and Dennd4a are less specific but fit best with neuronal and activated-myeloid contexts, respectively.
+
+
+#### Cluster 1 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 1) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell            | Subtype                              | Notes                                                                                     |
+| -------- | --------------- | ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Ctsz     | microglia       | homeostatic/lysosomal                | Cathepsin Z; lysosomal protease enriched in microglia/macrophages.                        |
+| Serpine2 | neuron          | excitatory neuron (layer-enriched)   | Serine protease inhibitor; enriched in cortical neurons, involved in synaptic remodeling. |
+| Hif1a    | microglia       | hypoxia-responsive                   | Hypoxia-inducible TF; upregulated in myeloid cells under low O₂.                          |
+| Or5v1b   | neuron          | olfactory receptor neuron            | Olfactory receptor gene; sensory neuron-specific.                                         |
+| Fcgr3    | microglia       | activated/DAM                        | Fc gamma receptor III; immune complex receptor in microglia/macrophages.                  |
+| Hexb     | microglia       | homeostatic                          | Lysosomal β-hexosaminidase; strong canonical microglia marker.                            |
+| Baiap2l2 | neuron          | excitatory neuron (spine-associated) | Actin-binding protein enriched in synaptic structures.                                    |
+| Sirpa    | microglia       | homeostatic/inhibitory signaling     | “Don’t eat me” receptor; high in microglia for synaptic pruning control.                  |
+| Egln3    | microglia       | hypoxia-responsive                   | Prolyl hydroxylase induced by hypoxia in glia/myeloid cells.                              |
+| Adarb1   | neuron          | excitatory neuron (RNA editing)      | RNA-editing enzyme; neuronal, especially in cortex/hippocampus.                           |
+| P4ha1    | microglia       | hypoxia/fibrosis-associated          | Collagen prolyl 4-hydroxylase; hypoxia-inducible in activated microglia.                  |
+| Gpr183   | microglia       | chemotactic/activated                | Oxysterol receptor EBI2; microglia/macrophage migration regulator.                        |
+| Gcnt2    | microglia       | glycosylation-associated             | Glycosyltransferase; found in myeloid cells including microglia.                          |
+| Gm56614  | unclassified    | uncharacterized                      | Predicted gene; expression context-dependent.                                             |
+| H1f3     | oligodendrocyte | immature/OPC                         | Histone H1 variant enriched during oligodendrocyte differentiation.                       |
+| Marchf3  | microglia       | antigen-presentation-associated      | E3 ubiquitin ligase regulating immune receptor turnover.                                  |
+| Immp2l   | neuron          | mitochondrial processing             | Inner mitochondrial membrane peptidase; neuronal enrichment.                              |
+| Tcap     | muscle cell     | skeletal muscle                      | Titin-cap; usually non-CNS, could be perivascular muscle contamination.                   |
+| Gm57375  | unclassified    | uncharacterized                      | Predicted gene; cell-type assignment unclear.                                             |
+| Tex14    | germ cell       | testis-specific                      | Germ cell protein; likely ambient RNA or contamination.                                   |
+
+
+Cluster 1 contains a strong microglial signature, with many homeostatic and activated/DAM markers (Ctsz, Hexb, Sirpa, Fcgr3, Gpr183, Marchf3) and a hypoxia-responsive profile (Hif1a, Egln3, P4ha1). Several neuronal genes (Serpine2, Baiap2l2, Adarb1, Immp2l) suggest either mixed-cell contamination or close neuronal interaction. A few genes (Tcap, Tex14, Gm56614, Gm57375) are likely ambient RNA or non-CNS contaminants. Overall, this cluster most likely represents hypoxia-responsive activated microglia with some mixed neuronal signal.
+
+
+#### Cluster 2
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 2) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell        | Subtype                      | Notes                                                                    |
+| -------- | ----------- | ---------------------------- | ------------------------------------------------------------------------ |
+| Tmem119  | microglia   | homeostatic microglia        | Canonical microglial marker defining resident lineage.                   |
+| Tnfaip3  | microglia   | activated/NF-κB feedback     | A20; NF-κB negative regulator induced by TLR/cytokines.                  |
+| Ppp1r15a | microglia   | stress/ISR                   | GADD34; integrated stress response, seen in activated myeloid cells.     |
+| Entpd1   | endothelial | capillary/endothelial        | CD39; high in brain endothelium and perivascular niche.                  |
+| Dapp1    | microglia   | TLR/BCR adaptor              | Myeloid adaptor enhancing PI3K signaling; induced with activation.       |
+| Pde3b    | microglia   | metabolic/anti-inflammatory  | cAMP PDE enriched in myeloid cells, modulates cytokine output.           |
+| Pag1     | microglia   | lipid-raft/immune modulation | PAG/Cbp; Src-family signaling brake in immune cells including microglia. |
+| Rasgef1b | microglia   | LPS-inducible                | RASGEF1B up in macrophage/microglia after TLR stimulation.               |
+| Agmo     | microglia   | lipid catabolism             | Alkylglycerol monooxygenase; myeloid lipid-handling/DAM programs.        |
+| Casp4    | microglia   | inflammasome-related         | Inflammatory caspase family; noncanonical inflammasome pathway.          |
+| Mertk    | microglia   | phagocytic/DAM               | TAM receptor for efferocytosis and myelin/amyloid clearance.             |
+| Dusp6    | microglia   | MAPK feedback                | ERK phosphatase; activation-linked negative feedback in myeloid cells.   |
+| Adrb2    | astrocyte   | protoplasmic astrocyte       | β2-adrenergic receptor enriched in astrocytes responding to NE.          |
+| Tgm2     | microglia   | DAM/phagocytic               | Transglutaminase 2; elevated in disease-associated microglia.            |
+| Fchsd2   | microglia   | endocytic trafficking        | Endocytosis/actin regulator; reported in activated myeloid cells.        |
+| Tbxas1   | microglia   | eicosanoid synthesis         | Thromboxane synthase; arachidonic pathway in macrophage/microglia.       |
+| Slc8a1   | neuron      | excitatory neuron            | NCX1; strong neuronal membrane exchanger, broad neuronal enrichment.     |
+| Gpr84    | microglia   | activated myeloid            | Medium-chain fatty acid GPCR; robust in activated microglia.             |
+| Chst8    | neuron      | secretory/glycosylation      | GalNAc sulfotransferase; neuronal secretory pathway enrichment.          |
+| Myc      | microglia   | cycling/activated            | Proliferation/activation TF; seen in dividing/reactive microglia.        |
+
+
+Most genes indicate activated microglia with DAM, phagocytic, lipid-handling, and NF-κB/stress feedback programs. A vascular signal appears via Entpd1. Adrb2 points to astrocytes. Slc8a1 and Chst8 support a minor neuronal component. Overall, cluster 2 aligns best with activated/phagocytic microglia with limited endothelial, astrocytic, and neuronal admixture.
+
+
+#### Cluster 3 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 3) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell                    | Subtype                       | Notes                                                           |
+| -------- | ----------------------- | ----------------------------- | --------------------------------------------------------------- |
+| Spp1     | microglia               | DAM/osteopontin⁺              | Osteopontin; hallmark of Spp1⁺ disease-associated microglia.    |
+| H2-Aa    | microglia               | MHC-II⁺ antigen-presenting    | Class II MHC; up in CD74⁺ APC-like microglia.                   |
+| Itgax    | microglia               | CD11c⁺ DAM                    | CD11c; marks activated/DAM microglia.                           |
+| Cst7     | microglia               | DAM/lysosomal                 | Cystatin F; elevated in phagocytic DAM.                         |
+| H2-Eb1   | microglia               | MHC-II⁺ antigen-presenting    | Class II MHC component; APC-like microglia.                     |
+| Atp6v0d2 | microglia               | DAM/lysosomal acidification   | V-ATPase subunit; osteoclast-like, up in DAM.                   |
+| H2-Ab1   | microglia               | MHC-II⁺ antigen-presenting    | Class II MHC; supports antigen presentation.                    |
+| Cd74     | microglia               | MHC-II⁺ antigen-presenting    | Invariant chain; high in APC-like microglia.                    |
+| Dkk2     | microglia               | DAM/Wnt-modulatory            | Wnt inhibitor; enriched in subsets of DAM.                      |
+| Gpnmb    | microglia               | DAM/phagocytic                | Glycoprotein NMB; robust in Trem2⁺ DAM.                         |
+| Ccl6     | microglia               | activated myeloid             | Chemokine enriched in inflammatory myeloid cells.               |
+| Ctsl     | microglia               | lysosomal                     | Cathepsin L; up in phagocytic/lysosomal programs.               |
+| Trem2    | microglia               | DAM/phagocytic                | Central DAM receptor driving lipid sensing and clearance.       |
+| Cd63     | microglia               | endolysosomal/exosomal        | Tetraspanin of late endosomes; increased with activation.       |
+| Fcrls    | microglia               | homeostatic-to-DAM transition | Microglia-enriched receptor retained across states.             |
+| B2m      | microglia               | MHC-I⁺ activated              | β2-microglobulin; antigen presentation, activation marker.      |
+| Ctnna3   | neuron                  | excitatory neuron             | Adherens junction protein; neuronal adhesion molecule.          |
+| Tlr2     | microglia               | TLR-activated                 | Pattern-recognition receptor; up in activated microglia.        |
+| Malt1    | microglia               | NF-κB signaling               | Paracaspase in CBM complex; immune activation.                  |
+| Postn    | perivascular fibroblast | reactive fibroblast           | Periostin; ECM protein from meningeal/perivascular fibroblasts. |
+
+
+This set is dominated by a classic DAM/MHC-II⁺ microglial program (Spp1, Itgax, Trem2, Gpnmb, Cst7, Atp6v0d2, H2 genes, Cd74, Cd63, Tlr2, Malt1, Ccl6, B2m), indicating antigen-presenting, phagocytic, and lysosomal activation. Fcrls supports microglial identity across states. Ctnna3 suggests minor neuronal contamination. Postn points to a small perivascular fibroblast signal.
+
+
+#### Cluster 4 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 4) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+
+
+| Gene          | Cell            | Subtype                            | Notes                                                                                     |
+| ------------- | --------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| Qdpr          | oligodendrocyte | mature myelinating                 | Enzyme in BH4 metabolism; enriched in oligodendrocytes.                                   |
+| A230001M10Rik | oligodendrocyte | mature myelinating                 | Predicted gene with strong oligodendrocyte expression in scRNA-seq atlases.               |
+| Aspa          | oligodendrocyte | mature myelinating                 | Aspartoacylase; canonical oligodendrocyte marker.                                         |
+| Plekhh1       | oligodendrocyte | mature myelinating                 | PlekHH1 expressed in oligodendrocytes, function in cytoskeleton regulation.               |
+| C030029H02Rik | oligodendrocyte | mature myelinating                 | Predicted transcript enriched in oligodendrocyte populations.                             |
+| Tmem151a      | neuron          | excitatory neuron (layer 2/3)      | Membrane protein highly expressed in certain cortical neurons.                            |
+| Abca2         | oligodendrocyte | mature myelinating                 | Lipid transporter highly enriched in myelin-forming oligodendrocytes.                     |
+| Gm42756       | unclassified    | uncharacterized                    | Predicted gene; uncertain, possibly oligodendrocyte-enriched.                             |
+| Tmem229a      | neuron          | excitatory neuron                  | TMEM229A found in neuronal clusters in mouse brain data.                                  |
+| Mast4         | neuron          | excitatory neuron                  | Microtubule-associated serine/threonine kinase; neuronal expression.                      |
+| Efhd1         | neuron          | excitatory neuron                  | Calcium-binding mitochondrial protein enriched in neurons.                                |
+| Dnajb2        | neuron          | excitatory neuron                  | Hsp40 co-chaperone; high neuronal expression.                                             |
+| Vldlr         | neuron          | excitatory neuron (Reelin pathway) | Very-low-density lipoprotein receptor in Reelin signaling; neuronal dendrite development. |
+| Lrrn1         | neuron          | excitatory neuron                  | Leucine-rich repeat neuronal protein; cortical and hippocampal neurons.                   |
+| Fign          | neuron          | excitatory neuron                  | Fidgetin; microtubule-severing enzyme enriched in neurons.                                |
+| Ppp2r3a       | neuron          | excitatory neuron                  | PP2A regulatory subunit; broad neuronal enrichment.                                       |
+| 4930420G21Rik | unclassified    | uncharacterized                    | Predicted gene; unknown, likely neuronal expression pattern.                              |
+| Jph4          | neuron          | excitatory neuron                  | Junctophilin-4; presynaptic calcium channel scaffolding protein.                          |
+| Acyp2         | neuron          | excitatory neuron                  | Acylphosphatase; neuronal expression in brain.                                            |
+| 5033421B08Rik | unclassified    | uncharacterized                    | Predicted gene; unclear, possible neuronal bias.                                          |
+
+
+Cluster 4 shows a mixed profile with a strong mature oligodendrocyte signature (Qdpr, Aspa, Abca2, Plekhh1, C030029H02Rik, A230001M10Rik) alongside a substantial set of neuronal markers (Tmem151a, Vldlr, Lrrn1, Jph4, Mast4, Efhd1). This pattern may reflect partial doublets or oligodendrocyte–neuron interactions in myelinated tracts. Uncharacterized predicted genes likely follow the main cell-type patterns observed.
+
+
+#### Cluster 5 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 5) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell         | Subtype                     | Notes                                                                        |
+| ------------- | ------------ | --------------------------- | ---------------------------------------------------------------------------- |
+| Gm10790       | unclassified | uncharacterized             | Predicted transcript; limited annotation in brain datasets.                  |
+| Ccr5          | microglia    | activated myeloid           | Chemokine receptor on CNS myeloid cells; rises with inflammation.            |
+| P2ry12        | microglia    | homeostatic microglia       | Canonical microglial GPCR; downregulated with activation.                    |
+| Lpcat2        | microglia    | activated/inflammatory      | Lipid-remodeling enzyme induced by LPS/TLR signaling in myeloid cells.       |
+| Siglech       | microglia    | homeostatic microglia       | Mouse microglia marker in parenchyma; used for microglia-specific targeting. |
+| A830008E24Rik | unclassified | uncharacterized             | Predicted gene; cell-type bias unclear in brain.                             |
+| Gm2629        | unclassified | uncharacterized             | Predicted gene; sparse annotation; likely follows cluster context.           |
+| Zfhx3         | neuron       | excitatory neuron           | ATBF1 TF enriched in cortical/thalamo-cortical neurons.                      |
+| Selplg        | leukocyte    | infiltrating monocyte       | PSGL-1; adhesion receptor on blood-borne myeloid cells.                      |
+| Srgap2        | neuron       | excitatory neuron           | Spine morphogenesis regulator; neuronal development marker.                  |
+| Atp8a2        | neuron       | projection neuron           | Phospholipid flippase enriched in neurons/axons.                             |
+| 4933406I18Rik | unclassified | uncharacterized             | Predicted transcript with uncertain brain specificity.                       |
+| Ophn1         | neuron       | synaptic neuron             | RhoGAP at dendritic spines; neuronal synaptic function.                      |
+| Csmd3         | neuron       | excitatory neuron           | Large adhesion protein enriched in cortical/hippocampal neurons.             |
+| Ltc4s         | microglia    | activated/eicosanoid        | Leukotriene C4 synthase; arachidonic pathway in myeloid cells.               |
+| Crybb1        | unclassified | likely contaminant          | Lens β-crystallin; atypical in brain single cells.                           |
+| Dock8         | lymphocyte   | T/B/NK cell                 | Immune cell cytoskeletal regulator; indicates peripheral lymphocytes.        |
+| P3h2          | neuron       | secretory/excitatory neuron | Prolyl-3-hydroxylase (LEPREL1); neuronal/olfactory enrichment.               |
+| Lrmda         | unclassified | uncharacterized             | Developmental gene; limited CNS cell-type data.                              |
+| Fhit          | unclassified | ubiquitous/unspecific       | Broad tumor-suppressor gene with low cell-type specificity.                  |
+
+
+This set is microglia-leaning with both homeostatic (P2ry12, Siglech) and activated/eicosanoid programs (Ccr5, Lpcat2, Ltc4s). Several neuronal genes (Zfhx3, Srgap2, Atp8a2, Ophn1, Csmd3, P3h2) indicate a mixed signal or nearby neurons. Dock8 and Selplg point to rare infiltrating lympho-myeloid cells. Multiple predicted or nonspecific genes remain unassigned.
+
+
+#### Cluster 6 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 6) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell            | Subtype                 | Notes                                                              |
+| ------- | --------------- | ----------------------- | ------------------------------------------------------------------ |
+| Rasip1  | endothelial     | capillary endothelial   | Essential for endothelial junctions and lumen formation.           |
+| She     | endothelial     | signaling/adaptor       | SH2 adaptor enriched in endothelial signaling contexts.            |
+| Ocln    | endothelial     | capillary endothelial   | Tight-junction protein at BBB endothelium.                         |
+| Kank3   | endothelial     | cytoskeletal/junctional | Cytoskeleton regulator reported in vascular endothelium.           |
+| Slc16a4 | endothelial     | transporter             | Monocarboxylate transporter expressed in vascular endothelium.     |
+| Wfdc1   | endothelial     | secreted/glycoprotein   | PS20; endothelial/perivascular secretion in brain.                 |
+| Icam2   | endothelial     | capillary/venous        | Classical endothelial adhesion molecule.                           |
+| Ushbp1  | endothelial     | junctional scaffold     | Tight-junction–associated adaptor in endothelial/epithelial cells. |
+| Far2    | oligodendrocyte | mature myelinating      | Fatty acyl-CoA reductase; myelin/oligodendrocyte enriched.         |
+| Hspa12b | endothelial     | stress-responsive       | Endothelial-enriched HSP with vascular protection roles.           |
+| Thsd1   | endothelial     | tip/shear-responsive    | Thrombospondin type-1 receptor; endothelial tip-cell marker.       |
+| Maoa    | pericyte        | vascular mural cell     | MAO-A detected in mural cells and vascular compartments.           |
+| Igf1r   | endothelial     | capillary endothelial   | IGF receptor present on brain endothelium.                         |
+| Eogt    | endothelial     | secretory/O-GlcNAc      | Glycosyltransferase modifying secreted proteins in endothelium.    |
+| Rgs12   | pericyte        | vascular mural cell     | Regulator of G-protein signaling enriched in perivascular cells.   |
+| Slc30a1 | endothelial     | metal ion transport     | Zn transporter detected in vascular endothelium.                   |
+| Cav2    | endothelial     | caveolae-rich           | Caveolin-2; abundant in endothelial caveolae.                      |
+| Gpcpd1  | endothelial     | lipid metabolism        | Glycerophosphocholine phosphodiesterase in vascular cells.         |
+| Hip1    | endothelial     | endocytic adaptor       | Endocytosis/scaffold protein in endothelial trafficking.           |
+| Luzp1   | endothelial     | cytoskeletal            | Actin-associated protein with vascular expression.                 |
+
+
+The profile is predominantly endothelial with strong junctional, caveolar, and transport signatures (Rasip1, Ocln, Icam2, Cav2, Hspa12b, Thsd1). Pericyte markers (Rgs12, Maoa) indicate mural cell admixture. Far2 suggests minor oligodendrocyte contamination. Overall, this cluster maps to brain microvascular endothelium with some perivascular support cells.
+
+
+
+#### Cluster 7 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 7) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell            | Subtype                         | Notes                                                                     |
+| ------- | --------------- | ------------------------------- | ------------------------------------------------------------------------- |
+| Tspan2  | oligodendrocyte | mature/myelinating              | Tetraspanin enriched in myelinating OLs and myelin membranes.             |
+| Pak1    | neuron          | excitatory neuron               | p21-activated kinase; high in neurons for spine/actin signaling.          |
+| Ablim2  | neuron          | excitatory neuron               | Actin-binding LIM protein enriched in CNS neurons/axons.                  |
+| Ddr1    | oligodendrocyte | mature/myelinating              | Collagen receptor strongly expressed in OLs in brain atlases.             |
+| Sytl2   | oligodendrocyte | vesicle/trafficking OL          | Synaptotagmin-like protein detected in OL lineage; secretory trafficking. |
+| Tmod1   | neuron          | excitatory neuron               | Tropomodulin; actin capping at synapses/axons, neuronal enrichment.       |
+| Aatk    | neuron          | excitatory neuron               | Neuronal kinase linked to neurite outgrowth and survival.                 |
+| Sox10   | oligodendrocyte | OL lineage TF                   | Master TF for OL/Schwann lineage and myelin gene program.                 |
+| Serinc5 | oligodendrocyte | lipid/myelin synthesis          | Serine incorporator; supports sphingolipid/myelin lipid pathways in OLs.  |
+| Sh3gl3  | neuron          | synaptic neuron                 | Endophilin A3; clathrin-mediated endocytosis at synapses.                 |
+| Tnni1   | muscle cell     | skeletal muscle (contaminant)   | Slow skeletal troponin I; not typical for CNS parenchyma.                 |
+| Lpar1   | OPC             | oligodendrocyte precursor       | Canonical OPC receptor (LPA1) marking progenitors.                        |
+| Tspan15 | oligodendrocyte | mature/myelinating              | Tetraspanin with OL-enriched expression in CNS datasets.                  |
+| Cerox1  | neuron          | excitatory neuron (lncRNA)      | Brain lncRNA modulating mitochondrial complex I; neuronal bias.           |
+| Usp54   | unclassified    | ubiquitous/unspecific           | Deubiquitinase with broad expression; limited cell-type specificity.      |
+| Pou3f1  | OPC             | early differentiating OL        | POU-domain TF (Oct6/Scip) in OL differentiation.                          |
+| Lpgat1  | oligodendrocyte | myelin lipid metabolism         | Lysophospholipid acyltransferase; supports OL membrane biogenesis.        |
+| Gm10863 | unclassified    | uncharacterized                 | Predicted transcript; assignment unclear.                                 |
+| Neat1   | astrocyte       | protoplasmic astrocyte (lncRNA) | Paraspeckle lncRNA robust in glia, notably astrocytes.                    |
+| Kit     | mast cell       | perivascular mast cell          | c-Kit receptor; marks resident mast cells near CNS vasculature.           |
+
+
+Most genes map to the oligodendrocyte lineage, mixing OPC markers (Lpar1, Pou3f1) with mature/myelinating programs (Tspan2, Ddr1, Serinc5, Tspan15, Lpgat1, Sox10). Several neuronal structural/vesicle genes (Pak1, Ablim2, Sh3gl3, Tmod1, Aatk, Cerox1) suggest nearby neurons or doublets. Neat1 indicates a glial/astrocytic component. Kit points to rare perivascular mast cells, and Tnni1 likely reflects ambient or non-CNS contamination.
+
+
+#### Cluster 8 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 8) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+
+| Gene     | Cell            | Subtype                          | Notes                                                                        |
+| -------- | --------------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| Atf3     | microglia       | injury/stress-activated          | Immediate-early TF induced by neuronal injury or inflammation in microglia.  |
+| Dusp1    | microglia       | MAPK feedback/activated          | ERK phosphatase; rapid-response gene in activated myeloid cells.             |
+| Ptchd1   | neuron          | excitatory neuron                | Patched domain-containing protein; enriched in cortical/hippocampal neurons. |
+| Mylip    | microglia       | lipid metabolism                 | MYLIP/IDOL; regulates LDLR degradation in myeloid cells.                     |
+| Runx1    | microglia       | developmental/reactive           | TF in microglial development and in reactive states after injury.            |
+| Rgs2     | microglia       | GPCR signaling feedback          | GPCR regulator; induced by cytokines in microglia.                           |
+| Basp1    | neuron          | excitatory neuron                | Axonal membrane protein enriched in neurons.                                 |
+| C3ar1    | microglia       | complement receptor              | High in microglia during inflammation; binds C3a.                            |
+| Mir142hg | microglia       | inflammatory                     | Host gene for miR-142; myeloid-enriched under activation.                    |
+| Mafb     | microglia       | transcriptional regulator        | Maintains mature microglial identity and phagocytic function.                |
+| Abcd2    | microglia       | lipid transport                  | Peroxisomal transporter; enriched in microglia/oligodendrocytes.             |
+| Cd84     | microglia       | immune receptor                  | SLAM family; expressed in activated microglia.                               |
+| Gm26542  | unclassified    | uncharacterized                  | Predicted transcript; limited annotation.                                    |
+| Ifitm10  | microglia       | IFN-response                     | IFN-induced transmembrane family member.                                     |
+| Creb5    | microglia       | transcription factor             | CREB family TF induced in immune activation.                                 |
+| Gm35417  | unclassified    | uncharacterized                  | Predicted transcript; unknown specificity.                                   |
+| Cotl1    | microglia       | actin-binding                    | Myeloid actin-bundling protein linked to phagocytosis.                       |
+| Ly86     | microglia       | co-receptor                      | MD-1; immune receptor accessory protein in myeloid cells.                    |
+| H1f2     | oligodendrocyte | immature/OPC                     | Histone H1 variant expressed in developing OLs.                              |
+| Sgk1     | microglia       | stress/glucocorticoid-responsive | Serum/glucocorticoid-regulated kinase in stress-activated myeloid cells.     |
+
+
+Cluster 8 is dominated by activation/stress-responsive microglia, with strong immediate-early (Atf3, Dusp1), immune receptor (C3ar1, Ly86, Cd84), lipid-handling (Mylip, Abcd2), and transcriptional (Runx1, Mafb, Creb5) programs. Several neuronal genes (Ptchd1, Basp1) likely reflect ambient or doublet signals. H1f2 indicates minor oligodendrocyte/OPC contamination. The overall profile suggests reactive microglia responding to injury, inflammation, or stress.
+
+
+#### Cluster 9 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 9) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell            | Subtype                      | Notes                                                                           |
+| ------------- | --------------- | ---------------------------- | ------------------------------------------------------------------------------- |
+| Anln          | OPC             | cycling OPC                  | Cytokinesis scaffold; marks proliferating progenitors.                          |
+| Enpp6         | oligodendrocyte | newly formed oligodendrocyte | Canonical NFOL marker during early differentiation.                             |
+| Apod          | oligodendrocyte | mature/supportive OL         | Apolipoprotein D; glial lipid transport, enriched in OL/astroglia.              |
+| Ermn          | oligodendrocyte | myelinating oligodendrocyte  | Ermin; myelin cytoskeleton protein in OLs.                                      |
+| Trf           | oligodendrocyte | mature myelinating           | Transferrin secreted by OLs; iron handling for myelin.                          |
+| Gjb1          | oligodendrocyte | myelinating oligodendrocyte  | Connexin32 in OLs and Schwann cells.                                            |
+| Serpinb1a     | leukocyte       | neutrophil/monocyte          | Protease inhibitor typical of peripheral myeloid cells; rare in CNS parenchyma. |
+| Septin8       | oligodendrocyte | differentiating OL           | Cytoskeletal GTPase implicated in OL maturation.                                |
+| Acot7         | neuron          | excitatory neuron            | Neuronal thioesterase; strong neuronal enrichment.                              |
+| Pacs2         | neuron          | excitatory neuron            | ER–mitochondria contact regulator; neuron-biased expression.                    |
+| Klk6          | oligodendrocyte | mature/reactive OL           | Serine protease abundant in OLs and white matter.                               |
+| Ppp2r2c       | neuron          | excitatory neuron            | PP2A B55-γ regulatory subunit; brain/neuronal enriched.                         |
+| Sccpdh        | unclassified    | ubiquitous enzyme            | Saccharopine dehydrogenase; limited cell-type specificity.                      |
+| Dip2a         | neuron          | excitatory neuron            | Developmental receptor highly expressed in cortical neurons.                    |
+| Eml2          | unclassified    | structural/microtubule       | Broad expression; not cell-type specific in brain.                              |
+| Usp31         | unclassified    | deubiquitinase               | Sparse CNS specificity reported.                                                |
+| Inpp5f        | oligodendrocyte | membrane/trafficking OL      | Phosphoinositide 5-phosphatase with OL/neuronal enrichment.                     |
+| Pdlim2        | unclassified    | cytoskeletal/NF-κB regulator | Broad regulator; cell-type assignment uncertain in CNS.                         |
+| Plin3         | oligodendrocyte | lipid-droplet OL             | Perilipin-3; lipid storage/turnover in myelinating glia.                        |
+| A530053G22Rik | unclassified    | uncharacterized              | Predicted gene; assignment unclear.                                             |
+
+
+The set is dominated by oligodendrocyte lineage, especially newly formed and myelinating states (Enpp6, Ermn, Trf, Gjb1, Klk6, Plin3). One marker indicates proliferating OPCs (Anln). Several neuronal genes appear as minor admixture (Acot7, Pacs2, Ppp2r2c, Dip2a). Serpinb1a suggests rare peripheral myeloid contamination. Multiple genes are nonspecific or uncharacterized.
+
+
+#### Cluster 10 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 10) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell            | Subtype                       | Notes                                                                  |
+| ------------- | --------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| Slc6a11       | astrocyte       | protoplasmic astrocyte        | GAT-3; astrocytic GABA uptake at synapses.                             |
+| Agt           | astrocyte       | protoplasmic astrocyte        | Angiotensinogen produced by astrocytes in CNS.                         |
+| Atp13a4       | astrocyte       | reactive/secretory astrocyte  | P-type ATPase enriched in astroglia; stress-responsive.                |
+| Spon1         | neuron          | excitatory neuron             | F-spondin; axon guidance protein in cortical/thalamo-cortical neurons. |
+| Lgi1          | neuron          | excitatory neuron             | Secreted synaptic organizer for AMPA signaling; neuron-specific.       |
+| Itih3         | astrocyte       | ECM/HA-interacting astrocyte  | Matrisomal protein linked to astrocyte ECM.                            |
+| Gpld1         | astrocyte       | secreted astrocyte            | GPI-anchored protein cleavage; detected in astrocyte secretome.        |
+| Fads2         | oligodendrocyte | myelinating oligodendrocyte   | Fatty acid desaturase supporting myelin lipid synthesis.               |
+| Kank1         | astrocyte       | cytoskeletal astrocyte        | Actin–microtubule linker expressed in astrocytes.                      |
+| B230323A14Rik | unclassified    | uncharacterized               | Predicted transcript; cell-type bias unclear.                          |
+| Sfrp5         | astrocyte       | Wnt-modulatory astrocyte      | Secreted Wnt antagonist detected in astroglia.                         |
+| Slc6a1        | neuron          | inhibitory neuron (GABAergic) | GAT-1; presynaptic GABA transporter in interneurons.                   |
+| Abat          | astrocyte       | metabolic astrocyte           | GABA transaminase for astrocytic GABA catabolism.                      |
+| Camk2g        | neuron          | excitatory neuron             | CAMK2 isoform enriched in pyramidal neurons.                           |
+| Fam228b       | unclassified    | uncharacterized               | Limited CNS annotation.                                                |
+| Cyp2j6        | endothelial     | brain endothelium             | CYP epoxygenase expressed in cerebrovascular endothelium.              |
+| Rgma          | oligodendrocyte | myelin-associated inhibitor   | RGMa limits axon growth; expressed in OLs and myelin.                  |
+| Phka1         | neuron          | excitatory neuron             | Phosphorylase kinase α1; neuronal energy metabolism.                   |
+| Pitpnc1       | neuron          | excitatory neuron             | PI transfer protein at synapses; neuron-enriched.                      |
+| Sparc         | astrocyte       | perivascular/ECM astrocyte    | Secreted matricellular protein from astrocytes and glia limitans.      |
+
+
+This set centers on astrocytes with GABA handling and ECM programs (Slc6a11, Agt, Itih3, Gpld1, Sfrp5, Sparc, Abat). Neuronal markers define excitatory and inhibitory components (Lgi1, Camk2g, Slc6a1, Pitpnc1, Spon1). Oligodendrocyte and myelin-related genes appear (Fads2, Rgma). One endothelial xenobiotic enzyme suggests a vascular signal (Cyp2j6). Several entries remain uncharacterized.
+
+
+#### Cluster 11 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 11) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell         | Subtype                                      | Notes                                                       |
+| ------------- | ------------ | -------------------------------------------- | ----------------------------------------------------------- |
+| Gldc          | astrocyte    | metabolic astrocyte                          | Glycine cleavage enzyme enriched in astrocytic metabolism.  |
+| Cspg5         | neuron       | excitatory neuron                            | Neuroglycan C; neuronal membrane proteoglycan at synapses.  |
+| Fjx1          | neuron       | excitatory neuron                            | Developmental signaling protein with neuronal enrichment.   |
+| Gli3          | astrocyte    | radial glia–like astrocyte                   | Patterning TF retained in astroglial lineages.              |
+| Scrg1         | astrocyte    | reactive/secretory astrocyte                 | Secreted protein up in glia during stress and remodeling.   |
+| Grin2c        | neuron       | excitatory neuron (thalamic/cerebellar bias) | NMDA receptor NR2C subunit in thalamus and granule neurons. |
+| St6galnac5    | endothelial  | brain endothelium                            | BBB-enriched sialyltransferase in CNS endothelium.          |
+| 4930488L21Rik | unclassified | uncharacterized                              | Predicted transcript; cell-type bias unclear.               |
+| Prdx6         | astrocyte    | antioxidant astrocyte                        | Peroxiredoxin-6; glial ROS defense.                         |
+| Mfge8         | astrocyte    | perivascular/ phagocytosis-support           | Astrocyte-derived opsonin promoting debris clearance.       |
+| Tspan7        | neuron       | excitatory neuron                            | Synaptic tetraspanin; neuronal dendrite/spine expression.   |
+| Pantr1        | endothelial  | tip-cell–like endothelium                    | lncRNA linked to angiogenic endothelial programs.           |
+| Msi2          | astrocyte    | progenitor-like astrocyte                    | Neural stem/astroglial RNA-binding protein.                 |
+| Hopx          | astrocyte    | protoplasmic astrocyte                       | Marker of cortical/hippocampal astrocyte lineages.          |
+| Ckb           | neuron       | excitatory neuron                            | Creatine kinase B; high neuronal energy enzyme.             |
+| Mgll          | neuron       | excitatory neuron                            | Synaptic monoacylglycerol lipase enriched in neurons.       |
+| Gstm5         | astrocyte    | detox/oxidative-stress astrocyte             | GST isoform enriched in glia for xenobiotic defense.        |
+| Garem1        | neuron       | excitatory neuron                            | MAPK pathway adaptor with neuronal enrichment.              |
+| Gfap          | astrocyte    | protoplasmic astrocyte                       | Canonical intermediate filament of astrocytes.              |
+
+
+The profile centers on astrocytes, including protoplasmic and progenitor-like states (Gfap, Hopx, Msi2, Prdx6, Mfge8). Neuronal synaptic and metabolic genes form a secondary component (Tspan7, Grin2c, Ckb, Mgll, Cspg5). Endothelial signals appear via St6galnac5 and Pantr1. Overall, cluster 11 most likely represents astrocytes with minor neuronal and vascular admixture.
+
+
+#### Cluster 12 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 12) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell         | Subtype                   | Notes                                                                  |
+| -------- | ------------ | ------------------------- | ---------------------------------------------------------------------- |
+| Lgals3   | microglia    | DAM/activated             | Galectin-3; high in phagocytic, injury-responsive microglia.           |
+| Ms4a7    | microglia    | activated/monocyte-like   | MS4A7 up in inflammatory microglia and infiltrating myeloid cells.     |
+| Ftl1     | microglia    | iron-handling             | Ferritin light chain; iron sequestration in activated microglia.       |
+| Cd68     | microglia    | phagocytic                | Lysosomal glycoprotein marking phagocytes.                             |
+| C3ar1    | microglia    | complement receptor       | C3a receptor; elevated with inflammation.                              |
+| Cd72     | B cell       | B cell                    | BCR co-receptor; indicates infiltrating B lineage.                     |
+| Glipr1   | microglia    | activated                 | p53-responsive myeloid protein increased by inflammatory cues.         |
+| Itga5    | microglia    | adhesion/activated        | Fibronectin receptor α5; rises in reactive myeloid cells.              |
+| Cacna1a  | neuron       | excitatory neuron         | P/Q-type Ca²⁺ channel (CaV2.1) in glutamatergic neurons.               |
+| Ell2     | plasma cell  | antibody-secreting cell   | Transcription elongation factor driving Ig production in plasma cells. |
+| Fth1     | microglia    | iron-handling             | Ferritin heavy chain; oxidative/iron stress in microglia.              |
+| Arhgap22 | microglia    | cytoskeletal/activated    | RhoGAP regulating myeloid motility; LPS-inducible.                     |
+| Mmp12    | microglia    | activated/macrophage-like | Macrophage elastase; up in reactive microglia.                         |
+| Hectd2os | unclassified | uncharacterized           | Antisense lncRNA; unclear brain cell-type bias.                        |
+| Lonrf3   | neuron       | excitatory neuron         | Neuron-enriched E3 ligase family member in CNS.                        |
+| Lyz2     | microglia    | activated                 | Lysozyme; hallmark myeloid enzyme.                                     |
+| Pfkfb3   | microglia    | glycolytic/activated      | Glycolysis driver induced in inflammatory microglia.                   |
+| Fabp5    | microglia    | lipid-handling/DAM        | Fatty acid–binding protein in lipid-laden microglia.                   |
+| Ch25h    | microglia    | IFN/lipid program         | Cholesterol 25-hydroxylase; antiviral and lipid pathways in microglia. |
+| Apoc1    | microglia    | DAM/lipid                 | ApoC1; strong in Trem2⁺ lipid-processing microglia.                    |
+
+
+This set maps chiefly to activated/DAM microglia with phagocytic, lipid, iron, and glycolytic programs (Lgals3, Ms4a7, Cd68, C3ar1, Fabp5, Apoc1, Ftl1/Fth1, Pfkfb3). Mmp12 and Lyz2 reinforce a macrophage-like state. Cacna1a and Lonrf3 suggest minor neuronal admixture. Cd72 and Ell2 indicate a small B/plasma cell presence. Hectd2os remains unassigned.
+
+
+#### Cluster 13 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 13) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell         | Subtype                         | Notes                                                         |
+| ------------- | ------------ | ------------------------------- | ------------------------------------------------------------- |
+| Fgf13         | neuron       | excitatory neuron               | Intracellular FGFs; high in axons/dendrites of CNS neurons.   |
+| Plxdc2        | endothelial  | tip-cell/angiogenic endothelial | Plexin domain–containing protein in brain endothelium.        |
+| Apbb1ip       | microglia    | immune/cytoskeletal             | RIAM adaptor in integrin signaling; present in myeloid cells. |
+| Lrmda         | unclassified | uncharacterized                 | Developmental gene; uncertain CNS cell-type bias.             |
+| Cacna1a       | neuron       | excitatory neuron               | P/Q-type Ca²⁺ channel in glutamatergic neurons.               |
+| Nrp1          | endothelial  | tip-cell/angiogenic endothelial | Neuropilin-1; VEGF receptor cofactor in CNS vasculature.      |
+| Arhgap24      | endothelial  | vascular cytoskeleton           | RhoGAP regulating endothelial junctions and sprouting.        |
+| Mir99ahg      | endothelial  | angiogenic lncRNA               | Host gene for miR-99a; expressed in endothelial cells.        |
+| Gm15155       | unclassified | uncharacterized                 | Predicted transcript; unclear assignment.                     |
+| Fyb           | microglia    | immune adaptor                  | Fyn-binding protein; immune cell signaling, myeloid enriched. |
+| Tanc2         | neuron       | excitatory neuron               | Postsynaptic scaffold in excitatory synapses.                 |
+| Cx3cr1        | microglia    | homeostatic microglia           | Fractalkine receptor; canonical resident microglial marker.   |
+| 4933406I18Rik | unclassified | uncharacterized                 | Predicted gene; unknown specificity.                          |
+| Nav2          | neuron       | excitatory neuron               | Neuron navigator protein; axonal guidance.                    |
+| Hpgds         | microglia    | lipid/eicosanoid                | Hematopoietic PGD synthase in myeloid cells.                  |
+| Gpr34         | microglia    | homeostatic/anti-inflammatory   | P2Y-like GPCR enriched in microglia.                          |
+| Mamdc2        | endothelial  | vascular ECM                    | Secreted adhesion molecule from CNS endothelium.              |
+| Sdk1          | neuron       | excitatory neuron               | Synaptic cell adhesion molecule in cortical neurons.          |
+| Wwox          | neuron       | excitatory neuron               | Tumor suppressor; neuronal dendrite maintenance.              |
+| Plcl1         | neuron       | excitatory neuron               | Phospholipase C–like protein; neuronal signal transduction.   |
+
+
+Cluster 13 shows a mixed neuronal–endothelial–microglial profile. Neuronal structural/signaling genes (Fgf13, Cacna1a, Tanc2, Nav2, Sdk1, Wwox, Plcl1) dominate. Endothelial angiogenic/junctional markers (Plxdc2, Nrp1, Arhgap24, Mir99ahg, Mamdc2) suggest strong vascular contribution. Microglial homeostatic and lipid-handling markers (Cx3cr1, Gpr34, Hpgds, Fyb) indicate perivascular or vessel-associated microglia. The composition points to neurovascular interface cells.
+
+
+#### Cluster 14 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 14) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell         | Subtype                           | Notes                                                                         |
+| ------------- | ------------ | --------------------------------- | ----------------------------------------------------------------------------- |
+| Ifi211        | microglia    | interferon-responsive             | Ifi200 family ISG induced by type I IFN in myeloid cells.                     |
+| Mx1           | microglia    | interferon-responsive             | Dynamin-like antiviral GTPase; classic ISG in microglia.                      |
+| Ifit3         | microglia    | interferon-responsive             | ISG that binds viral RNA; elevated in activated microglia.                    |
+| Ifit2         | microglia    | interferon-responsive             | Antiviral ISG; robust in myeloid IFN programs.                                |
+| A330040F15Rik | unclassified | uncharacterized                   | Predicted transcript; often co-expressed with ISG modules.                    |
+| Ifi207        | microglia    | interferon-responsive             | Ifi200 family ISG; myeloid-biased induction.                                  |
+| Rsad2         | microglia    | interferon-responsive (viperin)   | Antiviral enzyme; strong in IFN-stimulated microglia.                         |
+| Oasl2         | microglia    | interferon-responsive             | 2′–5′-oligoadenylate synthase-like ISG in myeloid cells.                      |
+| Ifi204        | microglia    | interferon-responsive             | PYHIN DNA-sensor family; induced in myeloid IFN states.                       |
+| Gm4951        | unclassified | uncharacterized                   | Predicted gene; tracks with ISG clusters.                                     |
+| Ccl12         | microglia    | inflammatory chemokine            | Monocyte-recruiting chemokine produced by activated myeloid cells.            |
+| Rnf213        | endothelial  | interferon-responsive endothelium | Moyamoya-linked E3 ligase; enriched in IFN-activated endothelium.             |
+| Parp14        | microglia    | interferon/STAT-linked            | ADP-ribosyltransferase up in IFN/STAT signaling.                              |
+| Herc6         | microglia    | interferon-responsive             | ISG15 E3 ligase; part of antiviral ISGylation pathway.                        |
+| Ifih1         | microglia    | RNA-sensing/IFN                   | MDA5 cytosolic sensor driving type I IFN responses.                           |
+| Bst2          | microglia    | interferon-responsive             | Tetherin; classic ISG induced in activated microglia.                         |
+| Pik3ap1       | microglia    | immune-signaling adaptor          | BCAP adaptor; TLR/BCR pathway component in myeloid cells.                     |
+| Cxcl10        | microglia    | interferon-induced chemokine      | IP-10; produced by IFN-stimulated microglia/astroglia; choose microglia here. |
+| Lyn           | microglia    | Src-family kinase                 | Immune kinase functioning in myeloid receptor signaling.                      |
+| Slc15a3       | microglia    | lysosomal/IFN-linked              | Endolysosomal peptide transporter enriched in activated myeloid cells.        |
+
+
+This set defines a strong interferon-stimulated program in microglia, including core ISGs (Mx1, Ifit2/3, Rsad2, Oasl2, Ifi20x family) plus IFN-induced chemokines (Cxcl10, Ccl12) and immune signaling nodes (Ifih1, Lyn, Pik3ap1, Slc15a3). Rnf213 points to a concurrent interferon signature in brain endothelium. Two predicted genes co-track with the ISG module. Overall, the cluster represents IFN-activated microglia with minor endothelial ISG input.
+
+
+#### Cluster 15 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 15) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene   | Cell         | Subtype                       | Notes                                                                     |
+| ------ | ------------ | ----------------------------- | ------------------------------------------------------------------------- |
+| Itk    | T cell       | CD8⁺/CD4⁺ T lymphocyte        | Tec family kinase critical for TCR signaling.                             |
+| Cd3g   | T cell       | CD8⁺/CD4⁺ T lymphocyte        | CD3 complex component; pan-T-cell marker.                                 |
+| Cd3e   | T cell       | CD8⁺/CD4⁺ T lymphocyte        | CD3 complex epsilon chain; pan-T-cell marker.                             |
+| Grap2  | T cell       | CD8⁺/CD4⁺ T lymphocyte        | Adaptor in TCR signaling; lymphoid-specific.                              |
+| Cxcr6  | T cell       | tissue-resident memory T cell | Chemokine receptor marking TRM cells in tissues including CNS.            |
+| Themis | T cell       | CD4⁺/CD8⁺ T lymphocyte        | Thymocyte selection-associated protein; T-cell signaling.                 |
+| Gimap4 | T cell       | CD4⁺/CD8⁺ T lymphocyte        | GTPase enriched in peripheral T cells.                                    |
+| Lck    | T cell       | CD4⁺/CD8⁺ T lymphocyte        | Src-family kinase essential for TCR signal transduction.                  |
+| Trac   | T cell       | CD4⁺/CD8⁺ T lymphocyte        | TCR alpha chain constant region; pan-T marker.                            |
+| Stat4  | T cell       | Th1-polarized T cell          | TF driving IFN-γ–producing Th1 and Tc1 programs.                          |
+| Cd226  | T cell       | activated T cell              | DNAM-1 adhesion receptor; up in cytotoxic/activated T cells.              |
+| Ikzf3  | T cell       | CD4⁺/CD8⁺ T lymphocyte        | Aiolos TF; lymphoid cell development.                                     |
+| Ctsw   | T cell       | cytotoxic T cell              | Granule-associated cathepsin in cytotoxic lymphocytes.                    |
+| Runx3  | T cell       | CD8⁺ cytotoxic T cell         | TF driving cytotoxic lineage and effector functions.                      |
+| Cd8b1  | T cell       | CD8⁺ cytotoxic T cell         | CD8 β chain; hallmark of cytotoxic T cells.                               |
+| Adam19 | unclassified | broad                         | Metalloprotease; not T-specific, may be expressed in multiple cell types. |
+| Pde7a  | T cell       | CD4⁺/CD8⁺ T lymphocyte        | cAMP-specific phosphodiesterase enriched in T cells.                      |
+| Gramd3 | unclassified | broad/immune                  | GRAM domain protein with immune enrichment but low specificity.           |
+| Bcl2   | T cell       | memory T cell                 | Anti-apoptotic factor enriched in long-lived T cells.                     |
+| Ptprc  | leukocyte    | pan-leukocyte                 | CD45; expressed in all hematopoietic cells.                               |
+
+
+This set is a classic T-cell transcriptional program, with core TCR components (Cd3e, Cd3g, Trac, Lck), signaling/adaptor molecules (Itk, Grap2, Themis), lineage-defining TFs (Runx3, Stat4, Ikzf3), and cytotoxic effectors (Ctsw, Cd8b1). Cxcr6 and Bcl2 suggest tissue-resident memory and long-lived subsets. Ptprc confirms hematopoietic origin. Non-specific genes (Adam19, Gramd3) are likely background or broadly expressed immune genes. Overall, the cluster represents predominantly CD8⁺ tissue-resident/effector T cells infiltrating brain tissue.
+
+
+#### Cluster 16 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 16) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell         | Subtype                          | Notes                                                                                  |
+| ------------- | ------------ | -------------------------------- | -------------------------------------------------------------------------------------- |
+| Calml4        | ependymal    | motile ciliated ependymal cell   | Calmodulin-like protein enriched in ciliated ventricular cells.                        |
+| Drc7          | ependymal    | motile ciliated ependymal cell   | Dynein regulatory complex protein; key for ciliary motility.                           |
+| Ecrg4         | ependymal    | secretory ependymal cell         | Cerebral spinal fluid–associated secreted protein from choroid plexus/ependymal cells. |
+| 2900040C04Rik | unclassified | uncharacterized                  | Predicted gene; expression context unclear but may align with ependymal profile.       |
+| Rsph1         | ependymal    | motile ciliated ependymal cell   | Radial spoke head protein; ciliary motility.                                           |
+| Prr32         | unclassified | uncharacterized                  | Predicted protein; cell-type bias unclear.                                             |
+| Clic6         | ependymal    | choroid plexus epithelium        | Chloride channel enriched in CSF-producing epithelium.                                 |
+| Kl            | ependymal    | choroid plexus epithelium        | Klotho; secreted protein from choroid plexus/ependymal cells.                          |
+| Ppp1r1b       | neuron       | dopaminoceptive neuron           | DARPP-32; medium spiny neurons in striatum.                                            |
+| Rbp1          | ependymal    | choroid plexus/retinoid handling | Retinol-binding protein in CSF-secreting cells.                                        |
+| Gsta4         | unclassified | antioxidant enzyme               | Glutathione S-transferase; expressed in multiple CNS cell types.                       |
+| Cdkn1c        | ependymal    | choroid plexus/ependymal         | Cell cycle inhibitor in epithelial/ependymal cells.                                    |
+| Cfap126       | ependymal    | motile ciliated ependymal cell   | Cilia-associated protein.                                                              |
+| Pcp4          | neuron       | calmodulin-binding neuron        | Purkinje cell protein 4; neuronal calcium signaling.                                   |
+| Chchd10       | neuron       | excitatory neuron                | Mitochondrial protein enriched in neurons.                                             |
+| Ezr           | ependymal    | apical junctional protein        | Ezrin in epithelial/ependymal microvilli.                                              |
+| Stk39         | unclassified | broad                            | Kinase with expression in multiple CNS cell types.                                     |
+| Ttr           | ependymal    | choroid plexus epithelium        | Transthyretin; hallmark secreted protein from choroid plexus.                          |
+| Fabp3         | neuron       | excitatory neuron                | Heart-type fatty acid–binding protein enriched in neurons.                             |
+| Cd59a         | endothelial  | vascular endothelium             | Complement regulatory protein in CNS vasculature.                                      |
+
+
+Cluster 16 is dominated by ependymal/choroid plexus epithelial markers, including motile cilia components (Drc7, Rsph1, Cfap126), secretory/transport proteins (Ttr, Kl, Clic6, Rbp1), and apical structural proteins (Ezr, Cdkn1c). A few neuronal genes (Ppp1r1b, Pcp4, Chchd10, Fabp3) suggest minor neuronal contamination, while Cd59a points to vascular contact. Overall, the profile matches motile ciliated and secretory ependymal cells of the ventricular and choroid plexus lining.
+
+
+#### Cluster 17 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 17) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene          | Cell         | Subtype                             | Notes                                                                        |
+| ------------- | ------------ | ----------------------------------- | ---------------------------------------------------------------------------- |
+| Rbfox3        | neuron       | pan-neuronal                        | NeuN; canonical neuronal nuclear marker.                                     |
+| Ryr2          | neuron       | excitatory projection neuron        | Ryanodine receptor; high in glutamatergic projection neurons.                |
+| Grin2a        | neuron       | excitatory neuron                   | NMDA receptor NR2A subunit enriched in cortical/hippocampal neurons.         |
+| Kcnip4        | neuron       | excitatory neuron                   | Kv channel–interacting protein enriched in pyramidal neurons.                |
+| Gabrb2        | neuron       | inhibitory synapse–receiving neuron | GABA$_A$ β2 subunit; broad neuronal, postsynaptic to GABA input.             |
+| Grm1          | neuron       | excitatory/metabotropic             | mGluR1; strong in cerebellar Purkinje and some forebrain excitatory neurons. |
+| Fam135b       | neuron       | excitatory neuron (putative)        | Neuron-enriched transcript; limited cell-type specificity.                   |
+| Pde10a        | neuron       | striatal medium spiny neuron        | cAMP/cGMP PDE highly expressed in MSNs.                                      |
+| Cnksr2        | neuron       | excitatory synaptic scaffold        | Postsynaptic scaffold at glutamatergic synapses.                             |
+| Vsnl1         | neuron       | excitatory neuron                   | Neuronal Ca$^{2+}$ sensor enriched in projection neurons.                    |
+| Pcsk2         | neuron       | neurosecretory neuron               | Prohormone convertase in peptidergic neurons.                                |
+| Slit3         | neuron       | developing/axonal guidance          | Axon guidance cue expressed in neurons.                                      |
+| Sphkap        | neuron       | excitatory neuron                   | PKA-anchoring protein enriched in neurons.                                   |
+| Celf2         | neuron       | excitatory neuron                   | RNA-binding/splicing factor prominent in neurons.                            |
+| A230006K03Rik | unclassified | uncharacterized                     | Predicted gene; neuronal-biased in atlases but not definitive.               |
+| Chgb          | neuron       | neurosecretory neuron               | Chromogranin B; dense-core vesicle protein in neurons.                       |
+| Lingo2        | neuron       | excitatory neuron                   | Leucine-rich repeat protein in CNS neurons.                                  |
+| Sncb          | neuron       | pan-neuronal                        | β-synuclein; presynaptic neuronal protein.                                   |
+| Nell1         | neuron       | developing excitatory neuron        | Secreted EGF-like protein in neuronal development.                           |
+| Ahi1          | neuron       | excitatory neuron                   | Jouberin; cilium/axon protein enriched in CNS neurons.                       |
+
+
+This set is neuron-dominant, with strong excitatory projection signatures (Grin2a, Kcnip4, Vsnl1, Cnksr2, Sphkap) and neurosecretory markers (Pcsk2, Chgb). Pde10a points to a striatal MSN subset. Grm1 suggests some cerebellar/forebrain excitatory contribution. One broad GABA$_A$ receptor subunit (Gabrb2) reflects inhibitory synaptic input rather than interneuron identity. Overall, the cluster maps to excitatory projection neurons with a striatal component.
+
+
+#### Cluster 19 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 19) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell                    | Subtype                       | Notes                                                             |
+| -------- | ----------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| Slc38a11 | pericyte                | capillary pericyte            | Amino acid transporter reported in perivascular/mural cells.      |
+| Slc6a20a | endothelial             | venous/capillary endothelium  | SIT1 transporter detected at the BBB endothelium.                 |
+| Atp13a5  | pericyte                | mural/pericyte                | P-type ATPase enriched in brain pericytes.                        |
+| Pdgfrb   | pericyte                | capillary pericyte            | Canonical pericyte receptor tyrosine kinase.                      |
+| Vtn      | perivascular fibroblast | vascular fibroblast           | Vitronectin; ECM protein from perivascular fibroblasts.           |
+| Notch3   | smooth muscle           | arteriolar SMC                | Receptor defining arteriolar smooth muscle and some pericytes.    |
+| Abcc9    | pericyte                | mural/pericyte                | K$_\text{ATP}$ channel SUR2; high in pericytes/SMC.               |
+| Gjc1     | smooth muscle           | vascular SMC/pericyte         | Connexin45 in mural gap junctions.                                |
+| Tbx3os1  | unclassified            | mural-associated lncRNA       | Antisense to Tbx3; reported near vascular smooth muscle programs. |
+| Higd1b   | endothelial             | capillary/tip-like            | Hypoxia-inducible mitochondrial protein in endothelium.           |
+| Aspn     | perivascular fibroblast | vascular fibroblast           | Asporin; matrix component of perivascular fibroblasts.            |
+| Sod3     | endothelial             | perivascular/endothelial      | Extracellular superoxide dismutase secreted by endothelium.       |
+| Mgp      | smooth muscle           | vascular SMC/pericyte         | Matrix Gla protein abundant in mural cells; anti-calcification.   |
+| Ackr3    | endothelial             | venous/angiogenic endothelium | Atypical chemokine receptor CXCR7 on CNS endothelium.             |
+| Dlc1     | endothelial             | junction/cytoskeleton         | RhoGAP regulating endothelial junctions and sprouting.            |
+| Cald1    | smooth muscle           | vascular SMC                  | Caldesmon; contractile apparatus component.                       |
+| Edn1     | endothelial             | endothelial (peptide hormone) | Endothelin-1; secreted by endothelium to signal mural cells.      |
+| Myh11    | smooth muscle           | vascular SMC                  | Smooth muscle myosin heavy chain; hallmark SMC marker.            |
+| Tagln    | smooth muscle           | vascular SMC                  | SM22α; classic SMC contractile marker.                            |
+| Dcn      | perivascular fibroblast | vascular fibroblast           | Decorin; ECM proteoglycan from perivascular fibroblasts.          |
+
+
+This set maps to the neurovascular unit with dominance of mural cells. Pericyte and SMC markers (Pdgfrb, Abcc9, Notch3, Myh11, Tagln, Cald1, Mgp, Gjc1) define a pericyte–smooth muscle program. Multiple endothelial genes (Slc6a20a, Higd1b, Ackr3, Dlc1, Edn1, Sod3) indicate close endothelial association. ECM genes (Vtn, Dcn, Aspn) support a perivascular fibroblast component. Overall, the cluster represents capillary/arteriolar mural cells with endothelial and fibroblast admixture.
+
+
+#### Cluster 20 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 20) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell         | Subtype                      | Notes                                                                    |
+| ------- | ------------ | ---------------------------- | ------------------------------------------------------------------------ |
+| Dcx     | neuron       | immature/developing neuron   | Doublecortin; hallmark of migrating/immature neurons.                    |
+| Dlx6os1 | neuron       | developing inhibitory neuron | Long non-coding RNA co-expressed with Dlx genes in GABAergic precursors. |
+| Igfbpl1 | neuron       | developing neuron            | IGF-binding protein–like 1; enriched in maturing neurons.                |
+| Dlx1    | neuron       | developing inhibitory neuron | TF driving GABAergic interneuron development.                            |
+| Sp9     | neuron       | developing inhibitory neuron | TF in striatal and cortical GABAergic interneuron differentiation.       |
+| Sox11   | neuron       | immature/developing neuron   | TF promoting neuronal differentiation and neurite growth.                |
+| Kcnb2   | neuron       | excitatory neuron            | Voltage-gated K$^+$ channel in cortical/hippocampal pyramidal neurons.   |
+| Grip1   | neuron       | excitatory neuron            | AMPA receptor trafficking protein; enriched in glutamatergic neurons.    |
+| Sdk2    | neuron       | excitatory neuron            | Synaptic cell adhesion molecule in specific glutamatergic subsets.       |
+| Tenm4   | neuron       | excitatory neuron            | Teneurin family adhesion/signaling protein in projection neurons.        |
+| Runx1t1 | neuron       | developing neuron            | TF expressed during early neuronal maturation.                           |
+| Mpped2  | neuron       | developing neuron            | Metallophosphoesterase enriched in differentiating neurons.              |
+| Pbx3    | neuron       | developing neuron            | TALE homeodomain TF in neuronal differentiation.                         |
+| Epha6   | neuron       | excitatory neuron            | Eph receptor in axonal guidance of cortical/hippocampal neurons.         |
+| Syn3    | neuron       | excitatory neuron            | Synapsin III; vesicle trafficking in developing neurons.                 |
+| Gm20754 | unclassified | uncharacterized              | Predicted transcript; co-expressed with neuronal programs.               |
+| Dync1i1 | neuron       | developing neuron            | Dynein intermediate chain; axonal transport in immature neurons.         |
+| Hmgb3   | neuron       | developing neuron            | Chromatin protein enriched in neural precursors.                         |
+| Arx     | neuron       | developing inhibitory neuron | TF essential for forebrain GABAergic interneuron specification.          |
+| Dlx2    | neuron       | developing inhibitory neuron | TF for GABAergic interneuron migration/differentiation.                  |
+
+
+Cluster 20 strongly reflects immature/developing neurons, with a mixed but prominent GABAergic interneuron developmental program (Dlx1, Dlx2, Arx, Sp9, Dlx6os1) and generic neuronal maturation genes (Dcx, Sox11, Pbx3, Runx1t1, Mpped2). Several excitatory neuron markers (Kcnb2, Grip1, Sdk2, Tenm4, Epha6) indicate a minor glutamatergic component or transitional states. Overall, it likely represents developing GABAergic interneurons with some excitatory neuron admixture.
+
+#### Cluster 22 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 22) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell       | Subtype                              | Notes                                                                 |
+| ------- | ---------- | ------------------------------------ | --------------------------------------------------------------------- |
+| Mrc1    | macrophage | perivascular (BAM, M2-like)          | CD206; hallmark of perivascular/alternatively activated macrophages.  |
+| F13a1   | macrophage | perivascular                         | Coagulation factor XIII A; high in tissue macrophages including BAMs. |
+| Ms4a6c  | macrophage | perivascular                         | MS4A family membrane protein enriched in macrophages.                 |
+| Pid1    | macrophage | perivascular                         | Endocytic/adaptor; myeloid-expressed, low specificity.                |
+| Pf4     | macrophage | perivascular                         | Platelet factor 4 also expressed in BAM-like vascular macrophages.    |
+| Dab2    | macrophage | perivascular/scavenging              | Endocytic adaptor up in M2-like macrophages.                          |
+| Cd163   | macrophage | perivascular (hemoglobin-scavenging) | Canonical BAM marker; Hb–haptoglobin receptor.                        |
+| Cd209f  | macrophage | dendritic-like BAM                   | DC-SIGN family; myeloid antigen-capture at vessel interfaces.         |
+| Stab1   | macrophage | perivascular/scavenger               | Stabilin-1; M2-like macrophage scavenger receptor.                    |
+| Iqgap1  | macrophage | perivascular                         | Cytoskeletal scaffold in motile/adhesive myeloid cells.               |
+| Rnf150  | macrophage | perivascular                         | RING E3; myeloid-enriched, low specificity.                           |
+| Ifitm2  | macrophage | interferon-responsive BAM            | IFN-induced transmembrane protein in myeloid cells.                   |
+| Maf     | macrophage | M2-like transcriptional program      | TF promoting alternative activation and tissue residency.             |
+| Slc9a9  | macrophage | endolysosomal                        | NHE9; endosomal pH regulator in immune cells.                         |
+| Ccl8    | macrophage | chemokine-secreting                  | Monocyte-recruiting chemokine from activated macrophages.             |
+| Cebpb   | macrophage | differentiation/activation           | TF guiding macrophage inflammatory/M2 programs.                       |
+| Fcgr2b  | macrophage | inhibitory Fc receptor               | ITIM-bearing FcγRIIb dampens activation in tissue macrophages.        |
+| Tsc22d3 | macrophage | glucocorticoid-responsive (GILZ)     | Anti-inflammatory regulator induced by steroids in macrophages.       |
+| Cytip   | macrophage | adhesion/trafficking                 | Regulates integrin-mediated adhesion in leukocytes.                   |
+| Srgn    | macrophage | secretory granule core               | Serglycin; granule proteoglycan in myeloid cells.                     |
+
+
+The gene set defines perivascular/border-associated macrophages with an M2-like, scavenging, and anti-inflammatory profile (Mrc1, Cd163, Stab1, Maf, Tsc22d3, Fcgr2b), plus chemokine and endolysosomal programs (Ccl8, Slc9a9, Srgn). Pf4 and Cd209f support a vascular-interface, antigen-capture phenotype. Low-specificity adaptors (Pid1, Iqgap1, Rnf150) fit within a macrophage context. Overall, this cluster maps to Mrc1⁺Cd163⁺ BAMs rather than parenchymal microglia.
+
+#### Cluster 23 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 23) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell                    | Subtype                      | Notes                                                           |
+| -------- | ----------------------- | ---------------------------- | --------------------------------------------------------------- |
+| Ndufa4l2 | pericyte                | hypoxia-responsive pericyte  | HIF-inducible mitochondrial subunit; high in pericytes.         |
+| Egflam   | perivascular fibroblast | vascular fibroblast          | ECM/adhesion protein around vessels and meninges.               |
+| Il34     | astrocyte               | perivascular astrocyte       | CSF1R ligand from astrocytes that supports microglia.           |
+| Gucy1b1  | smooth muscle           | arteriolar SMC               | sGC β1 for NO signaling in mural cells.                         |
+| Trpc3    | smooth muscle           | arteriolar SMC               | Ca²⁺-permeable channel in vascular contractile cells.           |
+| Arhgap42 | smooth muscle           | arteriolar SMC               | RhoGAP controlling vascular tone and junctions.                 |
+| Art3     | endothelial             | capillary/venous endothelium | ADP-ribosyltransferase reported in vascular endothelium.        |
+| Lin7a    | neuron                  | excitatory neuron            | Synaptic scaffold; likely minor neuronal admixture.             |
+| Ctdspl   | neuron                  | excitatory neuron            | CTDSP family phosphatase; neuronal bias; likely admixture.      |
+| Galnt17  | perivascular fibroblast | vascular fibroblast          | O-glycosyltransferase enriched in perivascular stromal cells.   |
+| P2ry14   | perivascular fibroblast | vascular fibroblast          | UDP-sugar GPCR common in fibroblast/perivascular stromal cells. |
+| Ecm2     | perivascular fibroblast | vascular fibroblast          | Matrix protein secreted by perivascular fibroblasts.            |
+| Sntb1    | pericyte                | contractile pericyte         | Dystrophin-associated scaffold at vascular membranes.           |
+| Nbl1     | perivascular fibroblast | vascular fibroblast          | DAN family BMP modulator in vessel-adjacent stroma.             |
+| Airn     | endothelial             | vascular lncRNA              | Imprinted lncRNA detected in vascular/endothelial niches.       |
+| Septin11 | pericyte                | contractile pericyte         | Cytoskeletal GTPase in mural cells.                             |
+| Kcnj8    | pericyte                | KATP pericyte                | Kir6.1 partner of ABCC9 in pericytes/SMC.                       |
+| Cspg4    | pericyte                | NG2⁺ pericyte                | NG2 proteoglycan; classic marker of pericytes (also OPCs).      |
+| Ddit4l   | pericyte                | stress/hypoxia pericyte      | REDD2; mTOR/HIF stress gene in mural cells.                     |
+| Morrbid  | macrophage              | perivascular macrophage      | Myeloid lncRNA; suggests minor BAM contamination.               |
+
+
+The set maps to the neurovascular unit, dominated by pericytes and arteriolar smooth muscle (Kcnj8, Gucy1b1, Arhgap42, Septin11, Sntb1, Ndufa4l2) with a strong perivascular fibroblast ECM/GPCR signature (Ecm2, P2ry14, Galnt17, Nbl1, Egflam). Endothelial inputs appear via Art3 and Airn. Il34 points to perivascular astrocyte support. Neuronal genes (Lin7a, Ctdspl) likely reflect admixture. Overall, this cluster represents vessel-associated cells, centered on NG2⁺ pericytes and vascular fibroblasts.
+
+
+#### Cluster 24 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 24) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+
+
+```
+
+| Gene          | Cell         | Subtype                        | Notes                                                                                        |
+| ------------- | ------------ | ------------------------------ | -------------------------------------------------------------------------------------------- |
+| Cfap141       | ependymal    | motile ciliated ependymal cell | Cilia- and flagella-associated protein in ventricular ependyma.                              |
+| Cfap46        | ependymal    | motile ciliated ependymal cell | Ciliary motility protein in multiciliated CNS cells.                                         |
+| Lrrc23        | ependymal    | motile ciliated ependymal cell | Axonemal protein in multiciliated cells.                                                     |
+| Ccdc170       | ependymal    | motile ciliated ependymal cell | Coiled-coil protein linked to ciliary structure.                                             |
+| Fam166c       | ependymal    | motile ciliated ependymal cell | Cilia-associated protein in multiciliated epithelia.                                         |
+| Foxj1         | ependymal    | motile ciliated ependymal cell | Master TF for motile ciliogenesis in ependymal cells.                                        |
+| Cfap206       | ependymal    | motile ciliated ependymal cell | Axonemal component in motile cilia.                                                          |
+| Gm867         | unclassified | uncharacterized                | Predicted transcript; likely co-expressed in ciliated cells.                                 |
+| Odf3b         | ependymal    | motile ciliated ependymal cell | Outer dense fiber protein in cilia/flagella.                                                 |
+| Sntn          | ependymal    | motile ciliated ependymal cell | Sentan; ciliary basal-plate component.                                                       |
+| Dthd1         | unclassified | uncharacterized                | Death-domain protein; unclear CNS specificity.                                               |
+| Lrrc36        | ependymal    | motile ciliated ependymal cell | Leucine-rich repeat protein localized to cilia.                                              |
+| Fam166b       | ependymal    | motile ciliated ependymal cell | Ciliary protein enriched in multiciliated epithelia.                                         |
+| Frmpd2        | ependymal    | motile ciliated ependymal cell | FERM domain protein localized at apical ciliary membrane.                                    |
+| Cdhr4         | ependymal    | motile ciliated ependymal cell | Cadherin-related ciliary adhesion molecule.                                                  |
+| 1700024G13Rik | unclassified | uncharacterized                | Predicted gene; likely co-expressed in ciliated epithelium.                                  |
+| 1700016K19Rik | unclassified | uncharacterized                | Predicted gene; likely associated with ciliated cell program.                                |
+| Unc5cl        | unclassified | axon guidance–related          | Netrin receptor family; neuronal expression in other contexts, possibly minor contamination. |
+| Dnah3         | ependymal    | motile ciliated ependymal cell | Dynein heavy chain in motile cilia.                                                          |
+| Stoml3        | neuron       | sensory neuron                 | Mechanotransduction protein; likely ambient neuronal transcript.                             |
+
+
+Cluster 24 is overwhelmingly composed of motile cilia–associated proteins (Foxj1, Cfap family, Odf3b, Sntn, Dnah3) defining ventricular ependymal cells and choroid plexus multiciliated epithelium. Minor neuronal transcripts (Unc5cl, Stoml3) likely reflect contamination. Several predicted genes co-track with the ciliary module. Overall, this is a classic motile ciliated ependymal cell signature.
+
+
+#### Cluster 25 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 25) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell         | Subtype                      | Notes                                                                 |
+| ------- | ------------ | ---------------------------- | --------------------------------------------------------------------- |
+| Sema3d  | OPC          | developing OPC               | Axon guidance molecule expressed in oligodendrocyte precursors.       |
+| Cacng4  | neuron       | excitatory neuron            | AMPA receptor auxiliary subunit; enriched in glutamatergic neurons.   |
+| Nxph1   | neuron       | excitatory neuron            | Neurexophilin; synaptic ligand for neurexins in projection neurons.   |
+| Pdgfra  | OPC          | canonical OPC                | Platelet-derived growth factor receptor α; hallmark OPC marker.       |
+| Ppfibp1 | OPC          | cytoskeletal/trafficking OPC | Liprin-β1; scaffolding in OL lineage cells.                           |
+| Epn2    | OPC          | endocytic OPC                | Epsin-2; endocytosis adaptor enriched in OPCs.                        |
+| Adam12  | OPC          | proliferating OPC            | Metalloprotease upregulated in developing OPCs.                       |
+| Gm56750 | unclassified | uncharacterized              | Predicted transcript; co-expressed with OPC program.                  |
+| Olig1   | OPC          | early OL differentiation     | TF driving oligodendrocyte differentiation.                           |
+| Xylt1   | OPC          | ECM-modifying OPC            | Xylosyltransferase in proteoglycan synthesis during OL development.   |
+| Olig2   | OPC          | canonical OPC                | Master TF for OPC specification and OL lineage.                       |
+| Kazn    | OPC          | cytoskeletal OPC             | Kazrin; expressed in OL lineage cells.                                |
+| Lims2   | OPC          | adhesion/cytoskeleton        | LIM domain protein enriched in OL lineage.                            |
+| Mpzl1   | OPC          | adhesion OPC                 | Myelin protein zero–like 1; present in early OL lineage.              |
+| Marcks  | OPC          | cytoskeletal signaling       | Myristoylated alanine-rich C kinase substrate in OPCs and astrocytes. |
+| Tcf7l2  | OPC          | differentiating OL           | TF driving transition from OPC to myelinating OL.                     |
+| Thra    | OPC          | differentiating OL           | Thyroid hormone receptor α; promotes OL maturation.                   |
+| Slc44a1 | OPC          | choline transporter          | Choline transporter-like 1; supports myelin lipid synthesis.          |
+| Tmem163 | OPC          | vesicle transport            | Cation transporter expressed in OL lineage cells.                     |
+| Agap1   | OPC          | endocytic trafficking        | ArfGAP; vesicular transport in OL lineage cells.                      |
+
+
+This set is almost entirely OPC-focused, with hallmark markers (Pdgfra, Olig1, Olig2) and genes for cytoskeletal remodeling, vesicle/endocytic trafficking, and differentiation signaling (Tcf7l2, Thra, Slc44a1). Occasional neuronal genes (Cacng4, Nxph1) are likely due to minor contamination. Overall, this cluster represents proliferating and early differentiating oligodendrocyte precursor cells.
+
+#### Cluster 26 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 26) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell            | Subtype                              | Notes                                                                                |
+| ------- | --------------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| Gria4   | neuron          | excitatory neuron (granule/IT)       | AMPA receptor GluA4; enriched in cerebellar granule and cortical excitatory neurons. |
+| Acsbg1  | astrocyte       | metabolic astrocyte                  | Long-chain acyl-CoA synthetase; astrocyte-enriched lipid metabolism.                 |
+| Stk32a  | neuron          | excitatory neuron (granule-biased)   | Kinase enriched in cerebellar granule and select cortical excitatory neurons.        |
+| Timp4   | neuron          | excitatory neuron                    | Synaptic/ECM regulator with neuronal enrichment.                                     |
+| Grid2   | neuron          | Purkinje neuron                      | Glutamate receptor δ2; Purkinje cell hallmark.                                       |
+| Tril    | astrocyte       | innate immune/BBB-adjacent astrocyte | TLR4 accessory protein induced in astrocytes.                                        |
+| Rgs7bp  | neuron          | synaptic signaling neuron            | Anchor for RGS7–Gβ5 complexes at neuronal membranes.                                 |
+| Lama2   | astrocyte       | perivascular/endfoot astrocyte       | Laminin α2 secreted by astrocyte endfeet at the BBB.                                 |
+| Pals2   | neuron          | postsynaptic scaffold                | MAGUK family (MPP6) at neuronal junctions.                                           |
+| Cap2    | neuron          | excitatory neuron                    | Actin regulator in dendrites/axons; neuronal enriched.                               |
+| Hdac8   | neuron          | generic neuron                       | Histone deacetylase with neuronal expression in CNS.                                 |
+| Ank2    | neuron          | axonal/somatic neuron                | Ankyrin-B; neuronal cytoskeleton and membrane domain organization.                   |
+| Fam107a | astrocyte       | stress-responsive astrocyte          | DRR1; glia-enriched, actin/stress program.                                           |
+| Ust     | oligodendrocyte | differentiating OL                   | Chondroitin/dermatan 2-sulfotransferase; OL/ECM remodeling.                          |
+| Gpm6b   | oligodendrocyte | myelinating oligodendrocyte          | Myelin-associated membrane glycoprotein (also in neurons).                           |
+| Paqr6   | neuron          | excitatory neuron                    | Progestin/adipoQ receptor; neuron-biased expression.                                 |
+| Sema6d  | neuron          | excitatory neuron                    | Axon-guidance semaphorin in developing projection neurons.                           |
+| Omg     | oligodendrocyte | myelin/axon-inhibitory               | Oligodendrocyte myelin glycoprotein; myelin-associated inhibitor.                    |
+| Prkca   | neuron          | excitatory neuron                    | PKCα; postsynaptic signaling in pyramidal neurons.                                   |
+| Slc38a3 | astrocyte       | protoplasmic astrocyte               | SNAT3 glutamine transporter; astrocyte-enriched at synapses.                         |
+
+
+Cluster 26 is neuron-dominant with strong excitatory and Purkinje signatures (Gria4, Grid2, Prkca, Rgs7bp). Astrocyte endfoot and metabolic markers are present (Acsbg1, Lama2, Slc38a3, Tril, Fam107a). Several myelin/OL genes (Omg, Gpm6b, Ust) indicate minor oligodendrocyte admixture. Overall, this cluster reflects excitatory/Purkinje-related neurons at the neurovascular–myelin interface.
+
+#### Cluster 27 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 27) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell                    | Subtype                     | Notes                                                      |
+| ------- | ----------------------- | --------------------------- | ---------------------------------------------------------- |
+| Cavin1  | smooth muscle           | vascular SMC/pericyte       | Caveolae scaffold (PTRF) abundant in mural cells.          |
+| Ltbp1   | perivascular fibroblast | vascular fibroblast         | TGF-β latent complex binder; ECM-rich fibroblasts.         |
+| Tpm1    | smooth muscle           | vascular SMC                | Contractile tropomyosin isoform in SMC.                    |
+| Mylk    | smooth muscle           | vascular SMC                | Myosin light chain kinase driving contraction.             |
+| Crim1   | perivascular fibroblast | vascular fibroblast         | ECM/adhesion protein in stromal perivascular cells.        |
+| Tpm2    | smooth muscle           | vascular SMC                | Contractile tropomyosin in mural cells.                    |
+| Pde3a   | smooth muscle           | vascular SMC                | cAMP PDE enriched in contractile SMC.                      |
+| Rasd1   | smooth muscle           | vascular SMC/pericyte (IEG) | Ras GTPase induced by glucocorticoids/NO in mural cells.   |
+| Palld   | smooth muscle           | vascular SMC/pericyte       | Palladin; actin cytoskeleton/contractile apparatus.        |
+| Ogn     | perivascular fibroblast | vascular fibroblast         | Osteoglycin; matrix proteoglycan around vessels.           |
+| Rbpms   | smooth muscle           | vascular SMC/pericyte       | RNA-binding protein seen in mural lineages; RGC in retina. |
+| Crip1   | perivascular fibroblast | vascular fibroblast         | LIM zinc-binding protein enriched in stromal fibroblasts.  |
+| Enah    | smooth muscle           | vascular SMC/pericyte       | Actin regulator supporting contractile structures.         |
+| Ccn3    | perivascular fibroblast | vascular fibroblast         | NOV; matricellular regulator in vessel-adjacent stroma.    |
+| Rcan2   | smooth muscle           | vascular SMC/pericyte       | Calcineurin modulator in vascular cells.                   |
+| Slc38a2 | pericyte                | capillary pericyte          | SNAT2 amino-acid transporter expressed in mural cells.     |
+| Csrp1   | smooth muscle           | vascular SMC                | LIM protein in contractile SMC cytoskeleton.               |
+| Neo1    | perivascular fibroblast | vascular fibroblast         | Neogenin receptor in perivascular mesenchyme/ECM guidance. |
+| Efemp1  | perivascular fibroblast | vascular fibroblast         | Fibulin-3; ECM protein in perivascular fibroblasts.        |
+| Fxyd5   | perivascular fibroblast | vascular fibroblast         | Dysadherin; stromal/vascular surface glycoprotein.         |
+
+
+The set maps to the neurovascular unit, dominated by mural cells. Strong contractile genes define vascular smooth muscle and pericytes (Tpm1/2, Mylk, Pde3a, Palld, Csrp1, Cavin1, Rasd1, Enah, Rcan2). A parallel ECM/matricellular module marks perivascular fibroblasts (Ltbp1, Ogn, Ccn3, Efemp1, Crip1, Neo1, Fxyd5). Slc38a2 supports a pericyte metabolic role. Overall, this cluster represents contractile mural cells with a prominent perivascular fibroblast component.
+
+#### Cluster 28 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 28) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene     | Cell         | Subtype                            | Notes                                                         |
+| -------- | ------------ | ---------------------------------- | ------------------------------------------------------------- |
+| Birc5    | cycling cell | G2/M phase                         | Survivin; mitotic regulator in proliferating cells.           |
+| Cdca8    | cycling cell | G2/M phase                         | Borealin; chromosome passenger complex component in mitosis.  |
+| Tpx2     | cycling cell | G2/M phase                         | Spindle assembly factor during mitosis.                       |
+| Mki67    | cycling cell | all cycling phases                 | Canonical proliferation marker.                               |
+| Cenpe    | cycling cell | G2/M phase                         | Kinetochore motor protein essential for chromosome alignment. |
+| Cenpf    | cycling cell | G2/M phase                         | Kinetochore protein in late mitosis.                          |
+| Top2a    | cycling cell | G2/M phase                         | DNA topoisomerase IIα; chromosome segregation.                |
+| Cenpa    | cycling cell | G2/M phase                         | Centromeric histone variant in dividing cells.                |
+| Ube2c    | cycling cell | G2/M phase                         | Ubiquitin-conjugating enzyme for mitotic progression.         |
+| Hmmr     | cycling cell | G2/M phase                         | RHAMM; spindle-associated protein.                            |
+| Knl1     | cycling cell | G2/M phase                         | Kinetochore scaffold protein.                                 |
+| H3c3     | cycling cell | S–G2/M phase                       | Histone H3 variant expressed in dividing cells.               |
+| Pbk      | cycling cell | G2/M phase                         | PDZ-binding kinase; mitotic kinase in progenitors.            |
+| Prc1     | cycling cell | G2/M phase                         | Cytokinesis regulator in proliferating cells.                 |
+| Nusap1   | cycling cell | G2/M phase                         | Microtubule bundling protein during mitosis.                  |
+| Aspm     | cycling cell | G2/M phase                         | Spindle pole protein in neural progenitors.                   |
+| Kif23    | cycling cell | G2/M phase                         | Cytokinesis kinesin.                                          |
+| Ifi27l2a | cycling cell | interferon-responsive cycling cell | ISG upregulated in some proliferating immune/glial cells.     |
+| Rrm2     | cycling cell | S phase                            | Ribonucleotide reductase subunit in DNA synthesis.            |
+| Gm42047  | unclassified | uncharacterized                    | Predicted gene; likely co-expressed with cycling programs.    |
+
+
+Cluster 28 is a pure proliferation/cell-cycle signature, dominated by G2/M phase and mitotic spindle/kinetochore genes (Birc5, Mki67, Top2a, Cenp family, Tpx2, Nusap1). The profile fits actively dividing cells from multiple lineages—likely cycling OPCs, microglia, or endothelial cells—rather than a distinct mature cell type. Ifi27l2a suggests some interferon-responsive cycling cells.
+
+
+#### Cluster 29 
+
+```{r}
+top <- markers |>
+    filter(pct.1>0.3) |> 
+    filter(cluster == 29) |> 
+    top_n(20, avg_log2FC) |> 
+    pull(gene)
+## 20 most enriched 
+# cat(top, sep = ",")
+```
+
+| Gene    | Cell        | Subtype                                | Notes                                                                                  |
+| ------- | ----------- | -------------------------------------- | -------------------------------------------------------------------------------------- |
+| Otx2os1 | neuron      | excitatory neuron (midbrain/forebrain) | lncRNA near Otx2; linked to midbrain/forebrain neuronal identity.                      |
+| Fras1   | ependymal   | choroid plexus epithelium              | ECM protein enriched in ventricular/choroid plexus cells.                              |
+| Folr1   | ependymal   | choroid plexus epithelium              | Folate receptor α; hallmark of choroid plexus epithelial cells.                        |
+| Prlr    | astrocyte   | neuroendocrine-responsive astrocyte    | Prolactin receptor expressed in hypothalamic/limbic astrocytes.                        |
+| Kcne2   | ependymal   | choroid plexus epithelium              | Potassium channel β-subunit enriched in CSF-secreting cells.                           |
+| Wfdc2   | ependymal   | choroid plexus epithelium              | HE4; secreted protease inhibitor from choroid plexus epithelium.                       |
+| Vat1l   | neuron      | excitatory neuron                      | Synaptic vesicle protein abundant in neurons.                                          |
+| Spint2  | ependymal   | choroid plexus epithelium              | Serine protease inhibitor in epithelial barrier cells.                                 |
+| Nhsl2   | neuron      | excitatory neuron                      | Actin cytoskeleton regulator enriched in neurons.                                      |
+| Pip5k1b | neuron      | excitatory neuron                      | Phosphatidylinositol-4-phosphate kinase; neuronal expression.                          |
+| Htr2c   | neuron      | excitatory neuron                      | Serotonin receptor 2C; postsynaptic receptor in neurons.                               |
+| Tmem72  | ependymal   | choroid plexus epithelium              | Transmembrane protein highly enriched in choroid plexus.                               |
+| F5      | endothelial | vascular endothelium                   | Coagulation factor V produced by CNS endothelium.                                      |
+| Slc4a10 | neuron      | excitatory neuron                      | Sodium-bicarbonate transporter in neurons, especially inhibitory/excitatory interface. |
+| Prdm16  | neuron      | excitatory neuron                      | TF in neuronal subtype specification.                                                  |
+| Slc4a5  | ependymal   | choroid plexus epithelium              | Sodium-bicarbonate transporter in CSF-secreting epithelial cells.                      |
+| Atp2b3  | neuron      | excitatory neuron                      | PMCA3 Ca²⁺ pump enriched in neurons.                                                   |
+| Sh3d19  | neuron      | excitatory neuron                      | SH3 domain protein enriched in neuronal tissue.                                        |
+| Lbp     | endothelial | vascular endothelium                   | LPS-binding protein expressed in vascular cells.                                       |
+| Tmem98  | ependymal   | choroid plexus epithelium              | Transmembrane protein with high choroid plexus specificity.                            |
+
+
+This set shows a dual identity: a strong choroid plexus/ependymal epithelium signature (Folr1, Wfdc2, Kcne2, Spint2, Tmem72, Slc4a5, Fras1, Tmem98) alongside neuronal genes (Otx2os1, Vat1l, Htr2c, Slc4a10, Atp2b3). Endothelial markers (F5, Lbp) suggest vascular contact. Overall, the dominant signal points to choroid plexus epithelial cells, with some neuronal admixture likely from nearby tissue or partial doublets.
+
+### Grouping of clusters by major cell class and most likely subtype
+
+| Group                                            | Clusters              | Main Subtype(s)                                           | Summary Notes                                                                                                           |
+| ------------------------------------------------ | --------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Excitatory neurons                               | 17, 26                | Cortical/hippocampal pyramidal, Purkinje, granule neurons | Glutamatergic projection neurons with regional specializations (Grin2a, Grid2, Gria4).                                  |
+| Inhibitory neurons                               | 20                    | Developing GABAergic interneurons                         | Dlx1/2, Arx, Sp9 define immature inhibitory lineage despite some excitatory markers.                                    |
+| Astrocytes                                       | 10, 11                | Protoplasmic, perivascular/ECM astrocytes                 | GABA handling (Slc6a11, Abat) and ECM/vascular interaction (Sparc, Lama2, Gfap).                                        |
+| Oligodendrocytes (mature)                        | 4, 9                  | Myelinating OLs                                           | Myelin/lipid programs (Aspa, Abca2, Ermn, Gjb1, Klk6, Trf).                                                             |
+| OPCs and newly formed OLs                        | 25                    | OPC → NFOL                                                | Pdgfra, Olig1/2, Lpar1; early myelin and lipid synthesis genes.                                                         |
+| Microglia — homeostatic                          | 5                     | Homeostatic microglia                                     | P2ry12, Siglech define resident microglia in resting state.                                                             |
+| Microglia — activated/DAM                        | 0, 1, 2, 3, 8, 12, 14 | DAM, MHC-II+, IFN-responsive microglia                    | Trem2/Spp1, MHC-II genes (H2, Cd74), ISGs (Mx1/Ifit), lipid and iron metabolism, hypoxia responses (Hif1a, P4ha1).      |
+| Perivascular/border-associated macrophages (BAM) | 22                    | Mrc1⁺Cd163⁺ BAM                                           | M2-like scavenging profile (Maf, Tsc22d3, Stab1, Fcgr2b) at vascular interface.                                         |
+| Endothelial cells                                | 6                     | Capillary/venous endothelium                              | Tight junction (Ocln), caveolae (Cav2), metabolic transporters (Slc16a4).                                               |
+| Pericytes & vascular smooth muscle cells (SMC)   | 19                    | Capillary pericytes, arteriolar SMC                       | Contractile and ion channel genes (Pdgfrb, Abcc9/Kcnj8, Myh11, Tagln).                                                  |
+| Perivascular fibroblasts                         | 27                    | ECM-rich vascular fibroblasts                             | Matrix proteins (Dcn, Aspn, Efemp1, Ltbp1, Ogn) around vessels.                                                         |
+| Ependymal/choroid plexus                         | 16, 24, 28            | Motile ciliated ependyma, choroid plexus epithelium       | Foxj1-driven ciliogenesis (Cfap family) and secretory CP markers (Ttr, Folr1, Wfdc2).                                   |
+| T lymphocytes                                    | 15                    | CD8⁺ tissue-resident/effector T cells                     | TCR complex (Cd3e/g, Trac), cytotoxic markers (Cd8b1, Runx3, Ctsw), Cxcr6 TRM.                                          |
+| Mixed neurovascular interface                    | 13, 23                | Neuron–endothelial–microglia/pericyte niche               | Combination of neuronal, endothelial, and pericyte/microglia genes indicating vessel-associated mixed cell populations. |
+| Proliferating cells                              | 28                    | Cycling progenitors (multiple lineages)                   | Pure cell-cycle module (Mki67, Top2a, Cenp family) without a single mature identity.                                    |
+
+
 
