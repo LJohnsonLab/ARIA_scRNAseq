@@ -56,7 +56,7 @@ d1|d2
 #| eval: false
 Idents(alldata) <- alldata$seurat_clusters
 DefaultAssay(alldata) <- "integrated"
-all_markers <- markers <- FindAllMarkers(alldata, only.pos = TRUE, densify = T)
+all_markers <- FindAllMarkers(alldata, only.pos = TRUE, densify = T)
 # write_csv(all_markers, file = "data/20250812-all_markers.csv")
 ```
 
@@ -171,7 +171,7 @@ markers <- read_csv("data/20250812-all_markers.csv")
 ```
 
 
-For each Seurat cluster, the top differentially expressed genes were selected based on two criteria:  
+For each Seurat cluster, the top differentially expressed (__upregulated__) genes were selected based on two criteria:  
 1. The gene had to be expressed in more than 30% of the cells in the cluster (pct.1 > 0.3), ensuring that selected genes represent markers broadly expressed within the cluster rather than being driven by rare subpopulations.  
 
 2. Among those genes, we ranked by the average log₂ fold change (avg_log2FC) relative to all other clusters and selected the top 20 genes with the highest positive fold change. This favors genes with the most specific and robust upregulation in the cluster of interest.

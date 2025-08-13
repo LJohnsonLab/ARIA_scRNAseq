@@ -1,8 +1,7 @@
 ---
-title: "Microglial subpopulations 1"
-subtitle: "Identification of Microglial Subpopulations"
+title: "Microglial subpopulations"
+subtitle: "Identification of Microglial Subpopulations after reclustering"
 date: today
-toc-depth: 4
 embed-resources: true
 execute: 
   warning: false
@@ -12,720 +11,347 @@ editor_options:
 ---
 
 ```{r}
-
-suppressPackageStartupMessages({
+library(clustree)
+#https://lazappi.github.io/clustree/articles/clustree.html
 library(tidyverse)
 library(Seurat)
 library(patchwork)
 library(kableExtra)
-    })
+```
 
-load("data/20250620-seurat_integrated_UMAP_nFeat-ScTypeannotated.Rdata")
-alldata$ribo_percent <- PercentageFeatureSet(alldata,assay = "SCT", pattern = "^Rp[ls]")
+```{r}
+#| eval: false
 
-markers <- read_csv("data/20250728-all_markers.csv")
+# Load the full annotated Seurat object containing all brain cell populations
+load("data/20250812-alldata_sctype_annotated_CHLOE_Lance.Rdata")
+
+# Calculate ribosomal gene percentage in the SCT assay
+alldata_clean$ribo_percent <- PercentageFeatureSet(alldata_clean, assay = "SCT")
+alldata_clean$original_clusters <- alldata_clean$seurat_clusters
+
+# Subset only the microglia cells based on annotation
+microglia <- subset(alldata_clean, subset = lance_classification == "Microglia")
+```
+
+## Reclustered microglia
+
+The integrated scRNAseq dataset of all brain cell populations was subsetted to retain only cells annotated as microglia by the "expert committee". The subset was reprocessed using the assay `integrated` to ensure batch-corrected expression values were used for downstream clustering.
+
+Dimensionality reduction was performed by principal component analysis (PCA) on the set of variable features. An elbow plot was generated to identify the inflection point, and the first 10 principal components were selected for neighborhood graph construction.
+
+```{r}
+
+# load the previously saved reclustered object (to save time)
+load("data/20250913-microglia_reclustered.Rdata")
+
+# Set Seurat cluster IDs as the active identity
+Idents(microglia) <- "original_clusters"
+
+# Plot the UMAP of the microglia subset before reclustering
+d1 <- DimPlot(microglia, label = TRUE, repel = TRUE, label.size = 5) +
+    NoLegend() +
+    ggtitle("Subsetted microglia from the\noriginal Seurat object")
+```
+
+```{r}
+#| eval: false
+
+# Use integrated assay for clustering
+DefaultAssay(microglia) <- "integrated"
+
+# Remove old PCA/UMAP/t-SNE reductions to avoid conflicts with re-analysis
+microglia@reductions[c("pca","umap","tsne")] <- NULL
+
+# Run PCA on variable features from the integrated assay
+microglia <- RunPCA(
+  microglia,
+  assay   = "integrated",
+  features = VariableFeatures(microglia),
+  verbose = FALSE
+)
+
+# Set seed for reproducibility
+set.seed(1234)
+
+# Compute nearest neighbors using first 10 PCs
+microglia <- FindNeighbors(microglia, reduction = "pca", dims = 1:10)
+
+# Perform clustering at multiple resolutions for later comparison
+microglia <- FindClusters(microglia, resolution = seq(0.1, 1.0, 0.2))
+
+# Select the resolution of interest (0.3) and store as "final_clusters"
+microglia$final_clusters <- microglia[[paste0("integrated_snn_res.", 0.3)]]
+Idents(microglia) <- "final_clusters"
+
+# Compute UMAP for visualization using first 10 PCs
+microglia <- RunUMAP(microglia, reduction = "pca", dims = 1:10, verbose = FALSE)
+
+# save(microglia, file = "data/20250913-microglia_reclustered.Rdata")
 
 ```
 
+```{r}
 
-## UMAPs
+# Elbow plot to help decide the number of PCs to retain
+ElbowPlot(microglia, ndims = 50) + ggtitle("Elbow Plot")
+```
 
-### All cell types
+Nearest neighbors in the reduced space were computed and an unsupervised clustering across a range of resolutions (0.1 to 1.0, step 0.2) was performed. Cluster stability across resolutions was evaluated with the `clustree` package, and a resolution of 0.3 was selected as a balance between capturing subpopulation diversity and avoiding overfragmentation.
 
-Comparison of UMAPs previously annotated using ScType and clustered with Seurat.
+```{r}
+# Visualize cluster stability and relationships across resolutions
+clustree(microglia, prefix = "integrated_snn_res.")
+```
+
+The final clusters were visualized using UMAP. The reclustering identified seven transcriptionally distinct microglial subpopulations (clusters 0–6) (Fig. 1B), compared with the initial single microglia cluster in the whole-brain dataset (Fig. 1A). These clusters exhibited clear separation in UMAP space, indicating distinct transcriptional programs.
 
 ```{r}
 #| column: page
 #| fig-width: 12
-Idents(alldata) <- alldata@meta.data$sctype_classification
-d1 <- DimPlot(alldata, label = TRUE, repel = T) + 
-    NoLegend() + ggtitle("ScType annotated")
 
-Idents(alldata) <- alldata@meta.data$seurat_clusters
-d2 <- DimPlot(alldata, label = TRUE, repel = T) + 
-    NoLegend() + ggtitle("Seurat clusters")
+Idents(microglia) <- "final_clusters"
 
-d1|d2
-```
+# Plot the reclustered microglia at the chosen resolution
+d2 <- DimPlot(microglia, label = TRUE, repel = TRUE, label.size = 6) +
+    NoLegend() +
+    ggtitle("Reclustered microglia (Resolution: 0.3)")
 
-### Only microglia
-
-```{r}
-#| column: page
-#| fig-width: 12
-
-microglia <- subset(alldata, subset = sctype_classification =="Microglial cells", idents = alldata$seurat_clusters)
-# save(microglia, file = "data/20250809-microglia1.Rdata")
-d3 <- DimPlot(microglia, label = TRUE, repel = T, label.size = 6) + 
-    NoLegend() + ggtitle("Only microglial cells")
-
-d4 <- FeaturePlot(microglia, features = c("ribo_percent"))
-
-d3|d4
-```
-
-Ribosomal Content Varies Across Microglial Subclusters. However, when examining the top marker genes obtained from FindAllMarkers, there are no ribosomal genes among the most discriminative features (_except in cluster 17_). This suggests that while ribosomal content varies, it does not directly drive cluster identity at the transcriptional marker level.
-
-
-### Clusters according to treatments (Adu vs. IgG)
-
-__All those cluster appear in both treatment groups__:
-
-```{r}
-#| column: page
-#| fig-width: 12
-DimPlot(microglia, label = TRUE, repel = T, split.by = "type", label.size = 6) + 
-    NoLegend() 
+# Show original subset vs. reclustered side-by-side
+d1 | d2
 ```
 
 ```{r}
-cell <- microglia@meta.data |> 
-    group_by(type, seurat_clusters) |> 
-    summarize (n=n()) |> 
-    pivot_wider(names_from = type, values_from = n) |> 
-    mutate(Adu_percent = round(Adu/sum(Adu)*100,1),
-           IgG_percent = round(IgG/sum(IgG)*100,1))
-
-kbl (cell, caption = "Cells per cluster",
-     col.names =c("Cluster",rep(c("Adu","IgG"),2))) |> 
-    kable_styling("striped") |> 
-    add_header_above(c(" ","cells (n)"=2,"cells (%)" =2), bold = T)
+table(microglia$final_clusters,microglia$original_clusters) |> 
+    kbl(caption = "Contribution of each original cluster (0-28) towards the reclustered clusters (0-6)") |> 
+    kable_styling("striped")
 ```
 
+## Cluster markers
 
-##  Microglial subpopulations. Cluster-specific markers.
+Cluster-specific marker genes were determined using a Wilcoxon rank-sum test, restricted to genes expressed in at least 30% of cells within a cluster.  
 
-The `FindMarkers` function was applied to the complete dataset, analyzing all available cells without any subsetting. By not subsetting prior to marker detection, the analysis maximizes statistical power. 
-
-### Outside the big blob
-
-
-#### Cluster 22
+The table represents the top 20 markers (according to the adjusted p-value) for each cluster:
 
 ```{r}
+# Identify top marker genes for each cluster
+markers_microglia2 <- FindAllMarkers(microglia, min.pct = 0.3,
+                                     only.pos = F, densify = TRUE)
 
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 22) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
+
+mg <- markers_microglia2|> 
+    mutate(regulation = ifelse(avg_log2FC<0, "Downregulated","Upregulated")) |> 
+    filter(pct.1 > 0.3) |> 
+    arrange(cluster, p_val_adj) |> 
+    group_by(cluster) |> 
+    slice_head(n = 20) |> 
+    summarize( top_markers = list(paste0(gene," (",regulation,")")))
+
+# Display results as a striped table
+kbl(mg) %>% 
+    kable_styling("striped")
 ```
 
-| Gene | Broad Class | Finer Subtype | Notes |
-|---------------|---------------|---------------|---------------------------|
-| **Mrc1** | Microglia / Macrophage | Perivascular macrophages | CD206; enriched in border-associated macrophages (BAMs) and perivascular/meningeal macrophages. |
-| **F13a1** | Microglia / Macrophage | Perivascular macrophages | Co-expressed with *Mrc1*; clotting factor XIII subunit A. |
-| **Ms4a6c** | Microglia | Homeostatic microglia | Member of MS4A family; enriched in microglia under steady-state conditions. |
-| **Pf4** | Microglia / Macrophage | Border-associated macrophages | Also known as platelet factor 4; found in BAM-like cells. |
-| **Pid1** | Microglia | Activated microglia | Linked to metabolic regulation and activation states. |
-| **Dab2** | Microglia / Macrophage | BAM-like macrophages | Endocytic adaptor; enriched in perivascular/meningeal macrophages. |
-| **Ctsc** | Myeloid (Microglia / Macrophage) | Activated microglia/macrophages | Cathepsin C; lysosomal protease. |
-| **Stab1** | Microglia / Macrophage | Perivascular macrophages | Scavenger receptor; strong BAM marker. |
-| **Ccl7** | Microglia / Macrophage | Activated/chemotactic state | Chemokine induced by inflammation. |
-| **Pim1** | Microglia | Activated microglia | Serine/threonine kinase; inflammatory regulation. |
-| **Rnf150** | Microglia | Homeostatic microglia | E3 ubiquitin ligase; enriched in resting microglia. |
-| **Ifitm2** | Myeloid / Endothelial | Interferon-stimulated microglia | Broad interferon response gene; can be endothelial too. |
-| **Iqgap1** | Broad | Ubiquitous but higher in activated microglia & astrocytes | Scaffold protein; upregulated in injury. |
-| **Maf** | Microglia / Macrophage | BAM-like macrophages | Transcription factor important for BAM identity. |
-| **Ccl8** | Microglia / Macrophage | Activated state | Chemokine; inflammatory signature. |
-| **Klf6** | Microglia / Astrocyte | Activated microglia/astrocytes | Injury-induced transcription factor. |
-| **Cebpb** | Microglia / Astrocyte | Inflammatory state | Regulates reactive glia. |
-| **Man1a** | Broad | Housekeeping | Golgi alpha-mannosidase; not cell-type specific. |
-| **Cytip** | Microglia / Macrophage | BAM-like macrophages | Cytokine-induced protein in myeloid cells. |
-| **Srgn** | Microglia / Macrophage | Activated myeloid cells | Proteoglycan; high in inflammatory myeloid cells. |
-
-Almost all these genes map to **myeloid lineage** in the brain, especially **border-associated macrophages (BAMs)** — which include perivascular, meningeal, and choroid plexus macrophages — and to a lesser extent **activated microglia**. The signature is strongly enriched for **perivascular macrophage markers** (*Mrc1, F13a1, Stab1, Pf4, Maf, Dab2*) combined with **inflammatory chemokines** (*Ccl7, Ccl8, Cebpb*).
-
-#### Cluster 23
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 23) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-| Gene | Broad Class | Finer Subtype | Notes |
-|----------------|----------------|----------------|--------------------------|
-| **Ndufa4l2** | Endothelial | Capillary / hypoxia-responsive EC | Mitochondrial complex I subunit; enriched in brain endothelial cells under low oxygen. |
-| **Egflam** | Endothelial / Pericyte | Vascular leptomeningeal cells | Extracellular matrix glycoprotein; strong in vascular interfaces. |
-| **Gucy1b1** | Endothelial | Arterial/venous EC | Soluble guanylate cyclase β1 subunit. |
-| **Il34** | Neuron (source) / Microglia (target receptor CSF1R) | Secreted trophic factor | Neurons produce IL-34 to support microglia survival; expression in cortical excitatory neurons. |
-| **Arhgap42** | Endothelial / Smooth muscle | Vascular SMC/pericytes | Rho GTPase-activating protein. |
-| **Galnt17** | Endothelial / Pericyte | Vascular interface | Glycosyltransferase; enriched in mural cells. |
-| **Lin7a** | Neuron | Excitatory neuron (layer-specific) | Synaptic scaffolding protein. |
-| **Ctdspl** | Neuron | Broad neuronal expression | Transcriptional repressor; high in excitatory neurons. |
-| **P2ry14** | Endothelial / Pericyte | Venous EC / pericytes | UDP-glucose receptor; enriched in vascular cells. |
-| **Sntb1** | Neuron / Glia | Synaptic protein | Found in neurons and astrocytic endfeet; part of dystrophin complex. |
-| **Art3** | Endothelial / Pericyte | Vascular smooth muscle-like | ADP-ribosyltransferase; mural cell enrichment. |
-| **Airn** | Endothelial | Capillary EC (non-coding RNA) | Imprinted lncRNA; vascular expression. |
-| **Myl9** | Smooth muscle / Pericyte | Contractile pericytes | Myosin light chain 9. |
-| **Ecm2** | Endothelial / Pericyte | Extracellular matrix of vasculature | ECM component; vascular specificity. |
-| **Nbl1** | Endothelial | Vascular niche | BMP antagonist; enriched in EC. |
-| **Septin11** | Broad | Cytoskeletal; ubiquitous | Not cell-type specific; structural role. |
-| **Kcnj8** | Pericyte / SMC | Contractile mural cells | Potassium inward rectifier channel Kir6.1. |
-| **Cspg4** | Pericyte / OPC | NG2+ cells | Canonical marker of pericytes and oligodendrocyte precursor cells. |
-| **Ddit4l** | Endothelial / Astrocyte | Hypoxia-stress responsive | Regulates mTOR; induced in vascular and glial cells under stress. |
-| **Morrbid** | Myeloid (perivascular macrophages) | Apoptosis regulator | lncRNA in tissue-resident myeloid cells; in brain, enriched in BAMs. |
-
-This set is dominated by **vascular-associated cells** — mostly **endothelial cells** and **mural cells** (pericytes, vascular smooth muscle cells) — with a few neuronal genes (*Il34, Lin7a, Ctdspl*), one perivascular macrophage gene (*Morrbid*), and a dual-identity pericyte/OPC marker (*Cspg4*). The strong enrichment for *Ndufa4l2, P2ry14, Kcnj8, Myl9* points to **capillary/perivascular structures**, often at the brain–blood barrier.
-
-#### Cluster 15
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 15) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-| Gene | Broad Class | Finer Subtype | Notes |
-|---------------|---------------|---------------|---------------------------|
-| **Itk** | Immune (T cell) | T lymphocytes | IL-2–inducible T-cell kinase; canonical T-cell signaling. |
-| **Cd3g** | Immune (T cell) | T lymphocytes | CD3 complex γ chain; TCR signaling. |
-| **Cd3e** | Immune (T cell) | T lymphocytes | CD3 complex ε chain; core T-cell receptor component. |
-| **Grap2** | Immune (T cell/NK) | T cells, NK cells | Adaptor in TCR/NK signaling. |
-| **Cxcr6** | Immune (T cell) | Tissue-resident memory T cells | Chemokine receptor guiding brain TRM infiltration. |
-| **Themis** | Immune (T cell) | T lymphocytes | Thymocyte development protein. |
-| **Gimap4** | Immune (T cell) | T lymphocytes | Small GTPase enriched in T cells. |
-| **Lck** | Immune (T cell/NK) | TCR/NK signaling | Src-family kinase in TCR signaling. |
-| **Trac** | Immune (T cell) | αβ T lymphocytes | TCR α constant region. |
-| **Cd226** | Immune (T cell/NK) | Cytotoxic T cells, NK cells | Co-stimulatory receptor. |
-| **Stat4** | Immune (T cell/NK) | Th1 CD4⁺ T cells, NK cells | Transcription factor in IL-12 signaling. |
-| **Atp8b4** | Microglia / Myeloid | Homeostatic microglia | Phospholipid transporter; strong microglial marker in brain. |
-| **Ikzf3** | Immune (B cell/T cell) | Memory B cells, T cells | Aiolos transcription factor. |
-| **Ctsw** | Immune (T cell/NK) | Cytotoxic lymphocytes | Cathepsin W; granule protein in CD8⁺ T cells and NK cells. |
-| **Runx3** | Immune (T cell) | CD8⁺ cytotoxic T cells | Lineage-defining transcription factor. |
-| **Adam19** | Broad | Various | Metalloproteinase; expressed in multiple lineages, higher in vascular cells. |
-| **Pde7a** | Immune (T cell) | T lymphocytes | cAMP phosphodiesterase enriched in T cells. |
-| **Gramd3** | Broad | Limited immune association | Poorly characterized; low-level in immune and vascular cells. |
-| **Bcl2** | Broad | Anti-apoptotic | Expressed in many cell types; survival factor in lymphocytes. |
-| **Ptprc** (*CD45*) | Immune (pan-leukocyte) | All immune cells | Canonical pan-leukocyte marker. |
-
-This list is overwhelmingly **T-cell–specific**, with strong enrichment for **CD3-complex genes** (*Cd3e, Cd3g, Trac*), **TCR signaling molecules** (*Itk, Lck, Themis, Grap2*), and **effector/memory T cell markers** (*Cxcr6, Runx3, Cd226, Stat4*). These signatures correspond to **brain-infiltrating T lymphocytes**, especially **CD8⁺ cytotoxic** and **tissue-resident memory (TRM)** subsets, with a possible small contribution from NK cells.
-
-One gene (*Atp8b4*) is clearly a **microglia marker**, suggesting either minor contamination or genuine presence of myeloid cells in this population. *Ptprc* confirms leukocyte origin.
-
-#### Cluster 17
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 17) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-| Gene | Broad Class | Finer Subtype | Notes |
-|----------------|----------------|-----------------|------------------------|
-| **Syngr1** | Neuron | Broad neuronal (synaptic vesicle protein) | Pan-synaptic marker; in both excitatory and inhibitory neurons. |
-| **Tyrobp** | Microglia / Macrophage | Activated microglia, DAM (disease-associated microglia) | Adaptor protein in TREM2 signaling. |
-| **Fau** | Broad | Housekeeping | [Ribosomal protein; not cell-type specific.]{style="background-color: yellow;"} |
-| **Rplp1** | Broad | Housekeeping | [Ribosomal large subunit protein; ubiquitous.]{style="background-color: yellow;"} |
-| **Tmsb4x** | Broad (with immune bias) | Cytoskeleton/actin regulator | Expressed in many cells; high in microglia and astrocytes. |
-| **Fcer1g** | Microglia / Macrophage | DAM/activated microglia | Immunoreceptor adaptor in TREM2–TYROBP axis. |
-| **Trem2** | Microglia | DAM signature | Alzheimer’s and injury-associated microglia. |
-| **Cst3** | Microglia / Astrocyte | Broad glial | Cystatin C; high in microglia, astrocytes, and choroid plexus epithelium. |
-| **Cd52** | Immune (lymphoid/myeloid) | Lymphocytes, some microglia | GPI-anchored protein; leukocyte marker with low microglial expression. |
-| **C1qc** | Microglia | Homeostatic microglia | Complement subcomponent; part of C1q complex. |
-| **Ctsd** | Microglia / Broad glia | Lysosomal protease | High in microglia and astrocytes. |
-| **C1qa** | Microglia | Homeostatic microglia | Complement component; C1q complex. |
-| **Ctsz** | Microglia | Activated microglia | Lysosomal protease upregulated in activation. |
-| **C1qb** | Microglia | Homeostatic microglia | Complement C1q complex. |
-| **Ctsb** | Microglia / Broad glia | Lysosomal protease | Ubiquitous in glia; higher in microglia. |
-| **Hexb** | Microglia | Canonical microglia marker | Beta-hexosaminidase subunit; stable homeostatic marker. |
-| **Cox6a2** | Neuron | Oxidative phosphorylation, neuronal subtype | Mitochondrial protein; often higher in fast-spiking neurons. |
-| **Grn** | Microglia / Astrocyte | Activated microglia | Progranulin; injury/inflammation marker. |
-| **Fxyd5** | Broad (Glia bias) | Astrocytes, microglia | Cell adhesion regulator. |
-| **Mpeg1** | Microglia / Macrophage | BAMs and activated microglia | Perforin-like protein; high in phagocytic myeloid cells. |
-
-This list is dominated by **microglia**, with a strong **homeostatic core signature** (*C1qa, C1qb, C1qc, Hexb*) combined with **activation/DAM markers** (*Trem2, Tyrobp, Fcer1g, Grn, Mpeg1*). This suggests you are seeing a **mixed microglial population** — mostly homeostatic, with a substantial activated/DAM subset.
-
-A few genes are neuronal (*Syngr1, Cox6a2*) or ubiquitous ribosomal (*Fau, Rplp1*), which could represent low-level neuronal contamination or ambient RNA.
-
-#### Cluster 14
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 14) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-| Gene | Broad Class | Finer Subtype | Notes |
-|-----------------|-----------------|--------------------|-------------------|
-| **Ifi211** | Myeloid (microglia/macrophage) | Interferon-stimulated microglia | Part of IFN-inducible family. |
-| **Ifit3** | Myeloid (microglia/macrophage) | Type I IFN response | Canonical antiviral gene. |
-| **Mx1** | Myeloid (microglia/macrophage) | IFN-stimulated antiviral state | Dynamin-like GTPase; viral defense. |
-| **Ifi209** | Myeloid | IFN-stimulated microglia | AIM2-like receptor family. |
-| **Ifit2** | Myeloid | IFN-induced microglia | Antiviral IFN response protein. |
-| **A330040F15Rik** | Myeloid | IFN-response | Predicted gene; co-expressed with ISGs. |
-| **Oasl2** | Myeloid | IFN-stimulated antiviral | 2'-5'-oligoadenylate synthetase-like. |
-| **Rsad2** (*Viperin*) | Myeloid | Antiviral IFN response | Strong ISG in microglia/macrophages. |
-| **Ifi204** | Myeloid | IFN/DNA-sensing microglia | p204 protein, innate immunity. |
-| **Gm4951** | Myeloid | IFN-induced | Predicted; co-expression with ISGs. |
-| **Ccl12** | Myeloid | Activated inflammatory macrophages | Monocyte chemoattractant. |
-| **Parp14** | Myeloid | IFN-stimulated | ADP-ribosyltransferase, antiviral role. |
-| **Herc6** | Myeloid | IFN-induced antiviral | E3 ligase in ISGylation pathway. |
-| **Ifih1** | Myeloid | Viral RNA sensing microglia | MDA5 helicase; innate immune sensor. |
-| **Bst2** | Myeloid | IFN-induced microglia/endothelial | Tetherin; antiviral restriction factor. |
-| **Pik3ap1** | Myeloid / B cell | B cell receptor adaptor; some myeloid expression | Possible infiltrating lymphoid origin. |
-| **Cxcl10** | Myeloid | IFN-induced chemokine | T cell chemoattractant (IP-10). |
-| **Lyn** | Myeloid / B cell | Src-family kinase in immune signaling | Present in microglia and B cells. |
-| **Slc15a3** | Myeloid | IFN-induced microglia/macrophages | Lysosomal peptide transporter; innate immunity. |
-| **Hpse** | Myeloid / Endothelial | Activated immune cells | Heparanase; ECM remodeling during inflammation. |
-
-This is a **Type I interferon–driven microglial/macrophage activation signature** with strong antiviral and inflammatory chemokine components. Key canonical ISGs (*Ifit3, Mx1, Rsad2, Oasl2, Cxcl10*) are all upregulated in **microglia** during viral infection models, neuroinflammation, or interferonopathies.
-
-A few genes (*Pik3ap1, Lyn*) have higher expression in **B cells**, so there might be a minor infiltrating B-lymphocyte component, but the dominant source here is clearly **microglia** in an **interferon-activated state**.
-
-### Inside the big blob
-
-#### Cluster 0
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 0) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-
-
-| Gene                     | Broad Class                    | Finer Subtype                             | Notes                                           |
-| ------------------------ | ------------------------------ | ----------------------------------------- | ----------------------------------------------- |
-| **Nfkbiz**               | Myeloid (microglia/macrophage) | NF-κB–responsive microglia                | Nuclear IκB family; inflammation-induced.       |
-| **Bcl2a1b**              | Myeloid                        | Pro-survival inflammatory myeloid cells   | Anti-apoptotic gene; NF-κB target.              |
-| **Tnf**                  | Myeloid                        | Activated microglia/macrophages           | Key pro-inflammatory cytokine.                  |
-| **Ier3**                 | Myeloid                        | Stress-response microglia                 | Immediate early gene; injury-induced.           |
-| **Bcl2a1d**              | Myeloid                        | Pro-survival inflammatory myeloid cells   | Paralogue of *Bcl2a1b*.                         |
-| **Il1b**                 | Myeloid                        | Activated inflammasome+ microglia         | Pro-inflammatory cytokine; NLRP3-dependent.     |
-| **Mapkapk2**             | Myeloid                        | Stress/inflammation response              | p38 MAPK-activated protein kinase.              |
-| **Cd14**                 | Myeloid                        | Classical monocytes / activated microglia | LPS co-receptor; innate immune sensing.         |
-| **Mir155hg**             | Myeloid                        | Activated inflammatory microglia          | Host gene for miR-155; immune activation.       |
-| **Nlrp3**                | Myeloid                        | Inflammasome+ activated microglia         | Inflammasome sensor; IL-1β maturation.          |
-| **Rel**                  | Myeloid                        | NF-κB transcription factor                | Drives cytokine production.                     |
-| **Dennd4a**              | Broad                          | Vesicular trafficking                     | Not cell-type specific; present in many cells.  |
-| **Cd86**                 | Myeloid                        | Antigen-presenting activated microglia    | Co-stimulatory molecule for T cell activation.  |
-| **Osm** (*Oncostatin M*) | Myeloid                        | Activated myeloid cells                   | Cytokine; can signal to astrocytes/endothelium. |
-| **Osbpl8**               | Broad                          | Lipid transport                           | Housekeeping; not specific.                     |
-| **Tnfsf9** (*4-1BBL*)    | Myeloid                        | Antigen-presenting activated microglia    | T cell co-stimulation.                          |
-| **Whrn**                 | Broad (neuronal bias)          | Mostly neuronal                           | May be background RNA here.                     |
-| **Pdgfb**                | Endothelial / Pericyte         | Vascular growth factor                    | Likely paracrine signal to vasculature.         |
-| **Bcl2l11** (*Bim*)      | Broad                          | Apoptosis regulator                       | Expressed in many cell types, including immune. |
-| **Ank**                  | Broad                          | Cytoskeletal / membrane protein           | Not specific; low-level across cells.           |
-
-
-classic **inflammatory myeloid signature**, enriched for NF-κB–driven cytokines and co-stimulatory molecules. This cluster is dominated by **pro-inflammatory, NF-κB–activated microglia/macrophages**, with hallmarks of **antigen presentation** (*Cd86, Tnfsf9*), **inflammasome activation** (*Nlrp3, Il1b*), and **NF-κB–driven cytokines** (*Tnf, Osm*). The **Mir155hg / Bcl2a1b/d** combination is typical of strong inflammatory activation.
-
-The presence of *Pdgfb* suggests possible **cross-talk to the vascular compartment**, which is often seen in perivascular macrophages or activated microglia near blood vessels.
-
-
-
-
-
-#### Cluster 1
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 1) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-
-
-| Gene                    | Broad Class                    | Finer Subtype                                  | Notes                                                                 |
-| ----------------------- | ------------------------------ | ---------------------------------------------- | --------------------------------------------------------------------- |
-| **Tnfaip3** (*A20*)     | Myeloid (microglia/macrophage) | NF-κB negative feedback in activated microglia | Anti-inflammatory regulator.                                          |
-| **Ppp1r15a** (*Gadd34*) | Myeloid                        | Stress-response myeloid cells                  | Involved in ER stress recovery.                                       |
-| **Entpd1** (*CD39*)     | Myeloid                        | Microglia with immunoregulatory phenotype      | Hydrolyzes ATP/ADP to suppress inflammation.                          |
-| **Pde3b**               | Myeloid                        | Lipid metabolism / anti-inflammatory microglia | cAMP regulation; linked to alternative activation.                    |
-| **Pag1**                | Myeloid                        | Lipid raft signaling in immune cells           | Adapter in immune receptor signaling.                                 |
-| **Dapp1**               | Myeloid                        | PI3K signaling in myeloid cells                | BCR/TLR pathway adaptor.                                              |
-| **Rasgef1b**            | Myeloid                        | Vascular-associated myeloid cells              | Induced by inflammatory stimuli, linked to endotoxin tolerance.       |
-| **Agmo**                | Myeloid                        | Lipid metabolism                               | Alkylglycerol monooxygenase; in alternatively activated macrophages.  |
-| **Casp4**               | Myeloid                        | Inflammasome-related                           | Non-canonical inflammasome sensor.                                    |
-| **Mertk**               | Myeloid                        | Phagocytic / repair microglia                  | Efferocytosis receptor in tissue repair phase.                        |
-| **Dusp6**               | Myeloid                        | MAPK feedback regulation                       | Dampens ERK signaling in resolution phase.                            |
-| **Tbxas1**              | Myeloid                        | Eicosanoid metabolism                          | Thromboxane synthase; lipid mediator regulation.                      |
-| **Adrb2**               | Myeloid                        | Neuroimmune interface microglia                | β2-adrenergic receptor; responsive to noradrenaline.                  |
-| **Tgm2**                | Myeloid                        | Wound-healing microglia                        | Cross-links ECM; tissue remodeling.                                   |
-| **Fchsd2**              | Broad                          | Vesicular trafficking                          | Not cell-type specific, enriched in vesicle-rich cells.               |
-| **Tbc1d9**              | Broad                          | Endosomal trafficking                          | Not cell-type specific; some enrichment in immune.                    |
-| **Abcd2**               | Myeloid                        | Lipid transport                                | Peroxisomal transporter in lipid metabolism.                          |
-| **Gpr84**               | Myeloid                        | Pro-inflammatory switch receptor               | Medium-chain fatty acid receptor; can be upregulated in inflammation. |
-| **Chst8**               | Broad (secretory cells)        | Sulfotransferase                               | Low-level in immune.                                                  |
-| **Myc**                 | Broad (proliferating cells)    | Proliferating microglia/macrophages            | Transcription factor; cell cycle entry.                               |
-
-
-**anti-inflammatory / resolution-phase myeloid signature**. This cluster fits an **activated but immunoregulatory / repair-oriented microglia–macrophage phenotype**, sometimes called **M2-like** or **resolution-phase** microglia.  
-
-Key features:
-
-* **Anti-inflammatory feedback**: *Tnfaip3, Dusp6, Ppp1r15a*.
-* **Phagocytosis and repair**: *Mertk, Tgm2*.
-* **Neuroimmune signaling**: *Adrb2* (responds to adrenergic input).
-* **Metabolic shift**: *Agmo, Pde3b, Abcd2, Tbxas1*.
-
-Compared to cluster 0 (high *Tnf, Il1b, Nlrp3*), this is a **less inflammatory, more resolution-oriented state**,  possibly spatially closer to degenerating neurons or vasculature undergoing repair.
-
-
-#### Cluster 2
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 2) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-
-
-| Gene                | Broad Class                    | Finer Subtype                            | Notes                                                            |
-| ------------------- | ------------------------------ | ---------------------------------------- | ---------------------------------------------------------------- |
-| **Ctsd**            | Myeloid (microglia/macrophage) | Lysosomal protease; high in microglia    | Involved in protein degradation.                                 |
-| **Ctsz**            | Myeloid                        | Lysosomal protease; activated microglia  | Enriched in inflammatory and phagocytic states.                  |
-| **Serpine2**        | Endothelial / Myeloid          | ECM remodeling, vascular niches          | Plasminogen activator inhibitor.                                 |
-| **Hif1a**           | Broad (hypoxia-responsive)     | Hypoxia-adapted microglia/endothelial    | Master regulator of low-oxygen response.                         |
-| **Fcgr3** (*Cd16*)  | Myeloid                        | Inflammatory/activated microglia         | Fcγ receptor; antibody-dependent activation.                     |
-| **Ctss**            | Myeloid                        | Lysosomal protease; antigen presentation | Upregulated in phagocytic microglia.                             |
-| **Grn**             | Myeloid                        | Activated microglia                      | Progranulin; injury/inflammation marker.                         |
-| **Hexb**            | Myeloid                        | Homeostatic microglia marker             | Core microglia identity gene.                                    |
-| **Baiap2l2**        | Broad                          | Cytoskeletal protein                     | Low cell-type specificity; may relate to motility.               |
-| **Egln3**           | Broad (hypoxia response)       | Oxygen sensor enzyme                     | Part of HIF pathway regulation.                                  |
-| **P4ha1**           | Broad (fibrosis / ECM)         | ECM collagen hydroxylation               | Often induced in hypoxic environments.                           |
-| **Pfkfb3**          | Broad (glycolytic switch)      | Hypoxia-activated microglia              | Key glycolysis regulator; metabolic adaptation.                  |
-| **Rab7b**           | Myeloid                        | Endo-lysosomal trafficking               | High in phagocytic microglia/macrophages.                        |
-| **Gpr183** (*Ebi2*) | Myeloid                        | Chemotactic receptor                     | Guides migration towards oxysterol gradients; seen in microglia. |
-| **Adarb1**          | Broad (neurons & glia)         | RNA editing enzyme                       | Some microglial expression.                                      |
-| **Gcnt2**           | Broad (glycosylation)          | Glycan biosynthesis                      | Low specificity; in immune/vascular.                             |
-| **Gm56614**         | Unknown                        | Predicted gene                           | Likely co-expressed with myeloid genes.                          |
-| **H1f3**            | Broad (proliferating cells)    | Histone variant H1.3                     | Chromatin regulation; not specific.                              |
-| **Tagap**           | Myeloid / Lymphoid             | T cell and microglial activation gene    | Rho GTPase-activating protein.                                   |
-| **Gm57375**         | Unknown                        | Predicted gene                           | Likely co-expressed with immune/hypoxia genes.                   |
-
-
-**Hypoxia- and lysosome-enriched myeloid state**, possibly linked to **perivascular or hypoxic microglia/macrophages**. Cluster 2 has a strong **lysosomal–phagocytic core** (*Ctsd, Ctss, Ctsz, Rab7b, Hexb*), combined with **hypoxia/metabolic adaptation** genes (*Hif1a, Egln3, Pfkfb3, P4ha1*). This is typical of **microglia or perivascular macrophages in hypoxic environments** (e.g., around ischemic lesions or tightly packed tumor vasculature).
-
-The presence of *Serpine2* and *P4ha1* suggests **ECM remodeling and perivascular interaction**, while *Fcgr3* and *Tagap* keep the profile immune-competent.
-
-
-
-
-#### Cluster 4
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 4) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-
-**homeostatic microglia–enriched cluster**, with some immune trafficking receptors and neuronal-interaction genes.
-
-| Gene              | Broad Class                                | Finer Subtype                                                | Notes                                                                                      |
-| ----------------- | ------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| **Gm10790**       | Unknown                                    | Predicted transcript                                         | Likely co-expressed with microglial genes.                                                 |
-| **8030442B05Rik** | Unknown                                    | Predicted transcript                                         | Expression pattern unclear; may follow microglial clusters.                                |
-| **P2ry12**        | Microglia                                  | Homeostatic microglia                                        | Canonical marker; downregulated in activation.                                             |
-| **Gm2629**        | Unknown                                    | Predicted transcript                                         | Likely microglial co-expression.                                                           |
-| **Ccr5**          | Myeloid (microglia/macrophage)             | Chemotactic receptor                                         | Inflammatory chemokine receptor; can be expressed in microglia and infiltrating monocytes. |
-| **Siglech**       | Microglia / pDC (rare in brain)            | Border-associated microglia signature                        | In brain, more linked to microglial subtypes.                                              |
-| **A830008E24Rik** | Unknown                                    | Predicted transcript                                         | Likely microglia-associated.                                                               |
-| **Zfhx3**         | Broad (neurons & glia)                     | Transcription factor                                         | Regulates circadian and neuronal genes; low-level in microglia.                            |
-| **4933406I18Rik** | Unknown                                    | Predicted transcript                                         | Likely co-expressed in microglial niche.                                                   |
-| **Srgap2**        | Neuron / Microglia interaction             | Axon guidance-related; microglia express in synaptic pruning | Implicated in neuron–microglia synapse remodeling.                                         |
-| **Atp8a2**        | Neuron                                     | Phospholipid flippase                                        | Mostly neuronal; may appear from neuronal RNA uptake.                                      |
-| **Ophn1**         | Neuron                                     | Synaptic Rho-GTPase regulation                               | Mostly neuronal expression.                                                                |
-| **Csmd3**         | Neuron                                     | Synaptic adhesion molecule                                   | Likely neuronal background RNA in cluster.                                                 |
-| **Tgfbr1**        | Broad (microglia, astrocytes, endothelium) | TGF-β receptor                                               | Important for homeostatic microglia maintenance.                                           |
-| **Dock8**         | Myeloid                                    | Cytoskeletal remodeling in immune cells                      | Linked to motility and immune synapses.                                                    |
-| **Ltc4s**         | Myeloid (microglia/macrophage)             | Leukotriene synthesis                                        | Eicosanoid metabolism; inflammatory signaling.                                             |
-| **Crybb1**        | Broad (lens/rare brain)                    | Crystallin βB1                                               | Likely low-level or background.                                                            |
-| **P3h2**          | Broad (collagen metabolism)                | Prolyl 3-hydroxylase                                         | Not cell-type specific.                                                                    |
-| **Fhit**          | Broad                                      | Tumor suppressor                                             | Low specificity.                                                                           |
-| **E330020D12Rik** | Unknown                                    | Predicted transcript                                         | Likely low-abundance.                                                                      |
-
-
-The anchor gene here is **P2ry12**, marking this as a **homeostatic microglia cluster**, likely representing surveillant microglia in healthy or less perturbed brain regions.
-
-Supporting markers for microglial identity:
-
-* *Tgfbr1* → required for microglial homeostasis.
-* *Siglech*, *Dock8*, *Ltc4s* → immune cell motility/communication genes.
-
-The presence of multiple **neuronal genes** (*Atp8a2, Ophn1, Csmd3, Srgap2*) is probably due to **phagocytosis of neuronal debris** or ambient RNA contamination, which is common in microglial clusters.
-
-
-
-#### Cluster 6
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 6) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-This cluster presents a strong **disease-associated microglia / phagocytic macrophage** profile, often seen in neurodegeneration, demyelination, or chronic injury models.
-
-| Gene                      | Broad Class              | Finer Subtype                        | Notes                                                               |
-| ------------------------- | ------------------------ | ------------------------------------ | ------------------------------------------------------------------- |
-| **Gpnmb**                 | Microglia / Macrophage   | DAM (disease-associated microglia)   | Lysosomal membrane protein; neurodegeneration marker.               |
-| **Igf1**                  | Microglia                | Neuroprotective / repair microglia   | Growth factor promoting neuronal survival.                          |
-| **Lgals3** (*Galectin-3*) | Microglia / Macrophage   | DAM / activated phagocytic microglia | Involved in phagocytosis and inflammation.                          |
-| **Lilrb4a**               | Myeloid                  | Immune checkpoint receptor           | Regulatory macrophage/microglia.                                    |
-| **Spp1** (*Osteopontin*)  | Microglia / Macrophage   | DAM / chronic inflammation           | Cytokine–ECM glycoprotein; high in aged or diseased microglia.      |
-| **Cd63**                  | Broad (immune/vesicular) | Exosome/lysosome protein             | Enriched in phagocytic microglia.                                   |
-| **Ftl1**                  | Broad (iron metabolism)  | Ferritin light chain                 | Iron storage; upregulated in activated microglia.                   |
-| **Cd68**                  | Microglia / Macrophage   | Lysosomal marker                     | Pan-phagocytic myeloid cell marker.                                 |
-| **Ms4a7**                 | Myeloid                  | Macrophage marker                    | More common in perivascular macrophages, but present in DAM.        |
-| **Atp6v0d2**              | Myeloid                  | Lysosomal acidification              | Part of vacuolar ATPase; linked to osteoclast-like microglia.       |
-| **Hectd2os**              | Unknown                  | Non-coding transcript                | Co-expressed with inflammatory myeloid genes.                       |
-| **Itga5**                 | Myeloid                  | ECM adhesion receptor                | Fibronectin receptor; motile microglia.                             |
-| **Fabp5**                 | Myeloid                  | Lipid metabolism                     | Fatty acid–binding protein; enriched in activated microglia.        |
-| **Adarb1**                | Broad                    | RNA editing enzyme                   | Low-level in microglia.                                             |
-| **Lyz2**                  | Myeloid                  | Pan-myeloid lysosomal enzyme         | High in macrophages, microglia, neutrophils.                        |
-| **Fth1**                  | Broad                    | Iron metabolism                      | Ferritin heavy chain; iron storage.                                 |
-| **Atosa**                 | Unknown                  | Predicted transcript                 | Likely myeloid-associated.                                          |
-| **Rgs16**                 | Myeloid                  | GPCR signaling regulator             | Involved in chemotaxis control.                                     |
-| **Ell2**                  | Broad (immune)           | Transcription elongation             | Present in plasma cells and some myeloid cells.                     |
-| **Mmp12**                 | Myeloid                  | ECM-degrading macrophage/microglia   | Elastase; high in infiltrating macrophages and activated microglia. |
-
-
-Cluster 6 is a **phagocytic, lipid-metabolizing, lysosome-rich microglial/macrophage population**, with hallmark DAM genes (*Gpnmb, Lgals3, Spp1, Cd68, Cd63, Fabp5*) and repair-associated factors (*Igf1, Lilrb4a*). The iron storage genes (*Ftl1, Fth1*) point to involvement in **iron homeostasis** following injury or myelin debris clearance.
-
-
-
-#### Cluster 8
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 8) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-This cluster´s profile fits an **early-activation / stress-response microglia** state, with transcription factors and immediate early genes suggesting a **recently stimulated** but not yet fully inflammatory phenotype.
-
-| Gene              | Broad Class                    | Finer Subtype                                     | Notes                                                             |
-| ----------------- | ------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------- |
-| **Atf3**          | Myeloid (microglia/macrophage) | Stress-response / injury-induced microglia        | Immediate early transcription factor.                             |
-| **Dusp1**         | Myeloid                        | MAPK signaling feedback                           | Negative regulator of ERK/JNK signaling; early activation marker. |
-| **Cd83**          | Myeloid                        | Antigen-presenting microglia                      | Immune co-stimulatory protein; often induced by TLR stimulation.  |
-| **Ier5**          | Broad (stress-response)        | Immediate early response gene                     | Transcriptional regulator in acute stress.                        |
-| **Csf1**          | Myeloid                        | Growth factor for microglia/macrophages           | Promotes survival and proliferation; autocrine in microglia.      |
-| **Ptchd1**        | Broad (neuronal bias)          | Developmental regulator                           | Likely low-level neuronal RNA.                                    |
-| **Runx1**         | Myeloid                        | Development/activation TF                         | Key in microglial development and activation.                     |
-| **Mylip**         | Broad                          | Lipid metabolism / ubiquitination                 | Ubiquitin ligase with metabolic regulation role.                  |
-| **Rgs2**          | Myeloid                        | GPCR signaling regulator                          | Often transiently induced during microglial activation.           |
-| **Basp1**         | Broad                          | Cytoskeletal / signaling                          | Weakly enriched in immune and neuronal cells.                     |
-| **Mafb**          | Myeloid                        | Transcription factor for differentiated microglia | Maintains mature identity; can be induced during repair.          |
-| **Mir142hg**      | Myeloid                        | Host gene for miR-142                             | Enriched in immune cells; regulates activation state.             |
-| **Arhgap22**      | Myeloid                        | Cytoskeletal regulation                           | Rho GTPase–activating protein in immune cells.                    |
-| **Gm26542**       | Unknown                        | Predicted transcript                              | Likely co-expressed with immune genes.                            |
-| **Gm35417**       | Unknown                        | Predicted transcript                              | Likely immune-linked.                                             |
-| **Creb5**         | Myeloid                        | cAMP response TF                                  | Involved in immune modulation and differentiation.                |
-| **Ifitm10**       | Broad (immune bias)            | IFN-inducible transmembrane protein               | Lowly expressed ISG.                                              |
-| **Ly86** (*MD-1*) | Myeloid                        | TLR4/MD-2 co-receptor partner                     | Enriched in microglia and B cells; innate sensing.                |
-| **H1f2**          | Broad                          | Histone H1.2                                      | Cell cycle/chromatin; not specific.                               |
-| **Sgk1**          | Myeloid                        | Stress-activated kinase                           | Regulates survival and inflammatory gene expression.              |
-
-
-Cluster 8 appears to be a **transient, early-activated microglial state**, positioned between homeostatic and fully inflammatory profiles. Hallmarks include:
-
-* **Immediate early / stress genes**: *Atf3, Dusp1, Ier5, Rgs2*.
-* **Activation TFs**: *Runx1, Mafb, Creb5*.
-* **Immune co-stimulatory signals**: *Cd83, Ly86*.
-* **Growth factor support**: *Csf1*.
-
-This cluster might represent microglia that have **recently sensed a stimulus** (e.g., DAMPs, cytokines) and are in the **priming phase** before committing to an inflammatory, DAM, or resolution phenotype.
-
-
-
-
-#### Cluster 10
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 10) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-This cluster has a **antigen-presenting, Spp1⁺ disease-associated microglia/macrophage** state with strong MHC-II expression and co-stimulatory capacity.
-
-| Gene                     | Broad Class                    | Finer Subtype                          | Notes                                                     |
-| ------------------------ | ------------------------------ | -------------------------------------- | --------------------------------------------------------- |
-| **H2-Aa**                | Myeloid (microglia/macrophage) | MHC-II antigen-presenting microglia    | Core MHC-II α-chain.                                      |
-| **H2-Eb1**               | Myeloid                        | MHC-II antigen-presenting microglia    | MHC-II β-chain.                                           |
-| **H2-Ab1**               | Myeloid                        | MHC-II antigen-presenting microglia    | MHC-II β-chain.                                           |
-| **Cd74**                 | Myeloid                        | MHC-II chaperone / invariant chain     | Required for MHC-II trafficking.                          |
-| **Itgax** (*CD11c*)      | Myeloid                        | Activated antigen-presenting microglia | Common in DAM and inflammatory microglia.                 |
-| **Spp1** (*Osteopontin*) | Myeloid                        | DAM / chronic activation               | Cytokine–ECM protein, high in aged/diseased microglia.    |
-| **Ccl6**                 | Myeloid                        | Inflammatory chemokine                 | Attracts monocytes/macrophages.                           |
-| **Cst7**                 | Myeloid                        | Cytotoxic / phagocytic microglia       | Cystatin F, lysosomal protease inhibitor.                 |
-| **Atp6v0d2**             | Myeloid                        | Lysosomal acidification                | Also in cluster 6; osteoclast-like microglia.             |
-| **Dkk2**                 | Myeloid                        | DAM / Wnt pathway modulator            | Seen in neurodegenerative microglia.                      |
-| **Ctsl**                 | Myeloid                        | Lysosomal protease                     | Cathepsin L; phagocytic microglia.                        |
-| **B2m**                  | Broad (immune)                 | MHC-I and MHC-II component             | β2-microglobulin.                                         |
-| **Ctnna3**               | Broad (neuronal adhesion)      | Likely neuronal RNA background         | Uncommon in microglia.                                    |
-| **Fam20c**               | Broad (secretory)              | Protein kinase for ECM proteins        | Limited immune specificity.                               |
-| **Otud1**                | Myeloid                        | Ubiquitin processing                   | Regulates inflammatory signaling.                         |
-| **Fcrls**                | Microglia                      | Homeostatic microglia marker           | Microglia-specific Fc receptor–like scavenger.            |
-| **Cxcl9**                | Myeloid                        | IFN-γ–induced chemokine                | Recruits Th1 T cells.                                     |
-| **Tlr2**                 | Myeloid                        | Innate immune receptor                 | Recognizes bacterial/fungal products.                     |
-| **Tgfb1**                | Myeloid                        | Regulatory cytokine                    | Maintains microglia homeostasis; immune suppression.      |
-| **Postn** (*Periostin*)  | Broad (ECM)                    | ECM remodeling                         | Often upregulated near vasculature or in reactive stroma. |
-
-
-Cluster 10 represents **antigen-presenting microglia/macrophages** with strong MHC-II expression (*H2-Aa, H2-Ab1, H2-Eb1, Cd74*), co-stimulatory marker *Itgax*, and inflammatory chemokines (*Ccl6, Cxcl9*). The combination of *Spp1, Dkk2, Atp6v0d2, Cst7* points toward **Spp1⁺ DAM**, often found in chronic neuroinflammation, neurodegeneration, or demyelination.
-
-Compared to the other DAM-like cluster (6), this one has:
-
-* **Stronger antigen presentation** signature (MHC-II, Cd74, Itgax)
-* **More IFN-γ–responsive chemokines** (*Cxcl9*)
-* Retains some **homeostatic microglia marker** (*Fcrls*)
-
-#### Cluster 12
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 12) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-This cluster looks like a **Gpr34⁺ / C3ar1⁺ homeostatic-to-early-activated microglia** profile, with some neuronal-adhesion transcripts likely from ambient RNA.
-
-| Gene             | Broad Class                          | Finer Subtype                           | Notes                                            |
-| ---------------- | ------------------------------------ | --------------------------------------- | ------------------------------------------------ |
-| **Fgf13**        | Broad (neuronal bias)                | Neuronal cytoskeletal regulator         | Likely background from neurons.                  |
-| **Gm15155**      | Unknown                              | Predicted transcript                    | Co-expressed with immune genes.                  |
-| **Plxdc2**       | Broad (endothelial / neuronal)       | ECM receptor                            | Expressed at neurovascular interface.            |
-| **Cacna1a**      | Neuron                               | P/Q-type calcium channel                | Strong neuronal background RNA.                  |
-| **Or5v1b**       | Olfactory receptor family            | Likely not functional in brain          | Probably low-level mis-mapping.                  |
-| **Nrp1**         | Broad (neurons, endothelial, immune) | Axon guidance / immune migration        | In microglia, linked to angiogenesis and repair. |
-| **Apbb1ip**      | Myeloid                              | Cytoskeletal and adhesion regulator     | Promotes immune cell migration.                  |
-| **Arhgap24**     | Broad (neurons & immune)             | Rho GTPase–activating protein           | Cytoskeleton and migration.                      |
-| **Lrmda**        | Broad (neuronal development)         | Retinal/neuronal differentiation factor | Likely background.                               |
-| **Fyb** (*ADAP*) | Myeloid / Lymphoid                   | Immune synapse adaptor                  | T cell and microglia activation.                 |
-| **Tanc2**        | Neuron                               | Synaptic scaffold protein               | Likely neuronal RNA background.                  |
-| **Gpr34**        | Microglia                            | Homeostatic microglia marker            | Strong identity gene for surveillant microglia.  |
-| **C3ar1**        | Microglia / Macrophage               | Complement receptor                     | Microglial chemotaxis and phagocytosis.          |
-| **Nav2**         | Broad (neurons)                      | Neuronal migration                      | Background RNA.                                  |
-| **Sdk1**         | Neuron                               | Synaptic adhesion molecule              | Likely ambient neuronal RNA.                     |
-| **Gm56614**      | Unknown                              | Predicted transcript                    | Also appears in your hypoxia cluster (2).        |
-| **Wwox**         | Broad (tumor suppressor)             | Ubiquitous                              | No cell-type specificity.                        |
-| **Marchf3**      | Myeloid                              | E3 ubiquitin ligase                     | Found in immune regulation.                      |
-| **Immp2l**       | Broad (mitochondrial)                | Mitochondrial peptidase                 | Housekeeping.                                    |
-| **Plcl1**        | Neuron                               | Phospholipase C-like protein            | Strong neuronal bias.                            |
-
-
-Clusters key microglia markers are **Gpr34** and **C3ar1**, both associated with **homeostatic or early-activated microglia**. Several genes (*Nrp1, Apbb1ip, Arhgap24, Fyb, Marchf3*) point to **motility and immune synapse formation**, suggesting a migratory/interactive state.
-
-However, there’s substantial **neuronal RNA background** (*Cacna1a, Tanc2, Sdk1, Nav2, Fgf13*), which could be due to microglia physically interacting with neurons or to ambient RNA contamination in single-cell prep.
-
-Compared to the “resting-like” cluster (4, *P2ry12*⁺), this one:
-
-* Shares homeostatic markers but
-* Shows more **motility-related genes** and complement receptor *C3ar1* (engaged in surveillance or early response).
-
-#### Cluster 27
-
-```{r}
-
-top <- markers |>
-    filter(pct.1>0.3) |> 
-    filter(cluster == 27) |> 
-    top_n(20, avg_log2FC) |> 
-    pull(gene)
-## 20 most enriched 
-# cat(top, sep = ",")
-```
-
-This cluster seems a **proliferating / cell-cycle microglia** cluster, with strong mitotic spindle and chromosome segregation gene expression.
-
-| Gene                   | Broad Class                     | Finer Subtype                           | Notes                                     |
-| ---------------------- | ------------------------------- | --------------------------------------- | ----------------------------------------- |
-| **Birc5** (*Survivin*) | Proliferating cells (microglia) | G2/M-phase marker                       | Anti-apoptotic and mitotic regulator.     |
-| **Cdca3**              | Proliferating cells             | Cell division cycle protein             | Regulates G1/S transition.                |
-| **Cdca8**              | Proliferating cells             | Chromosomal passenger complex           | Essential for mitosis.                    |
-| **Mki67**              | Proliferating cells             | Pan-cell-cycle marker                   | Gold standard proliferation marker.       |
-| **Tpx2**               | Proliferating cells             | Mitotic spindle assembly                | Microtubule-associated.                   |
-| **Cenpe**              | Proliferating cells             | Kinetochore motor protein               | Chromosome alignment during mitosis.      |
-| **Cenpf**              | Proliferating cells             | Kinetochore function                    | Required for proper mitosis.              |
-| **Knl1**               | Proliferating cells             | Kinetochore scaffold protein            | Essential for chromosome segregation.     |
-| **Cenpa**              | Proliferating cells             | Centromere-specific histone H3 variant  | Marks active centromeres.                 |
-| **Ube2c**              | Proliferating cells             | Ubiquitin-conjugating enzyme            | Cell cycle progression.                   |
-| **Top2a**              | Proliferating cells             | DNA topoisomerase                       | Required for DNA replication/mitosis.     |
-| **Hmmr**               | Proliferating cells             | Spindle positioning                     | Hyaluronan-mediated motility receptor.    |
-| **Nusap1**             | Proliferating cells             | Spindle assembly protein                | Stabilizes microtubules in mitosis.       |
-| **H3c3**               | Proliferating cells             | Histone H3.3                            | Chromatin assembly in dividing cells.     |
-| **Prc1**               | Proliferating cells             | Cytokinesis protein                     | Central spindle formation.                |
-| **Aspm**               | Proliferating cells             | Mitotic spindle pole protein            | Linked to neurogenesis and cell division. |
-| **Cdkn1a** (*p21*)     | Proliferating cells             | Cell cycle checkpoint                   | Can indicate DNA damage or repair pause.  |
-| **Rrm2**               | Proliferating cells             | Ribonucleotide reductase                | dNTP synthesis for DNA replication.       |
-| **Ifi27l2a**           | Myeloid / interferon response   | ISG; possible immune activation overlay | Not core proliferation marker.            |
-| **Gm42047**            | Unknown                         | Predicted transcript                    | Likely co-expressed in dividing cells.    |
-
-
-**Cell-cycle cluster**, almost certainly representing **dividing microglia/macrophages** in the dataset. These cells express:
-
-* **Core mitotic machinery** (*Mki67, Top2a, Birc5, Cenpe/f, Tpx2, Nusap1*).
-* **DNA replication enzymes** (*Rrm2, H3c3*).
-* **Cytokinesis regulators** (*Prc1, Aspm*).
-
-These are likely **microglia proliferating in response to injury or inflammation**, possibly bridging from homeostatic/early activation states into DAM or antigen-presenting states.
-
-
+## Cluster interpretation (chatGPT 5)
+
+### Cluster 0
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|----------|----------|----------|----------|---------------------------------|
+| Nfkbia | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | NF-κB inhibitor; rapid-response gene in inflammatory microglia during cytokine signaling. |
+| Gadd45b | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Stress-responsive transcriptional regulator induced by pro-inflammatory stimuli in microglia. |
+| Tnf | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Classic pro-inflammatory cytokine, hallmark of microglial activation. |
+| Egr1 | Microglia | Immediate early gene (IEG)-activated microglia | Upregulated | Rapid transcriptional activator in microglia after acute stimuli; linked to inflammatory and stress responses. |
+| Nfkbiz | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | NF-κB pathway regulator; modulates pro-inflammatory gene expression in microglia. |
+| Ier2 | Microglia | Immediate early gene (IEG)-activated microglia | Upregulated | Early-response transcription factor upregulated in activated microglia after stimulation. |
+| Ier3 | Microglia | Immediate early gene (IEG)-activated microglia | Upregulated | Anti-apoptotic and stress response mediator; induced in activated microglia. |
+| Il1b | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Key pro-inflammatory cytokine secreted by activated microglia; promotes neuroinflammation. |
+| Bcl2a1d | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Anti-apoptotic protein induced by NF-κB in inflammatory microglia. |
+| Tnfaip3 | Microglia | Activated/inflammatory microglia (AIM) | Downregulated | Negative regulator of NF-κB signaling; lower levels can prolong inflammatory responses. |
+| Ccl4 | Microglia | Chemotactic/inflammatory microglia | Upregulated | Chemokine attracting immune cells; enriched in DAM/AIM microglia. |
+| Mir155hg | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Host gene for miR-155, a pro-inflammatory regulator in microglia. |
+| Nr4a3 | Microglia | Immediate early gene (IEG)-activated microglia | Upregulated | Nuclear receptor involved in transcriptional reprogramming after activation. |
+| Junb | Microglia | Immediate early gene (IEG)-activated microglia | Upregulated | Component of AP-1 transcription factor complex; induced by inflammatory and stress signals. |
+| Ifrd1 | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Transcriptional regulator linked to immune cell activation. |
+| Btg2 | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | Early-response gene; reduction may reflect shift from transient to sustained activation. |
+| Clic4 | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Chloride channel involved in microglial activation and phagocytosis. |
+| Fos | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | Classic IEG; lower levels may indicate post-acute or chronic activation phase. |
+| Ccrl2 | Microglia | Chemotactic/inflammatory microglia | Upregulated | Chemokine receptor-like protein promoting immune cell recruitment during neuroinflammation. |
+| Ccl3 | Microglia | Chemotactic/inflammatory microglia | Upregulated | Pro-inflammatory chemokine; signature of activated and DAM microglia. |
+
+All 20 genes are microglial, with the majority linked to activated/inflammatory microglia (AIM) and chemotactic responses, indicating strong pro-inflammatory activation. A large subset are immediate early genes (Egr1, Ier2, Ier3, Nr4a3, Junb, Fos, Btg2), suggesting acute transcriptional reprogramming. Several chemokines (Ccl3, Ccl4) and receptors (Ccrl2) point to immune cell recruitment, while NF-κB pathway components (Nfkbia, Nfkbiz, Tnfaip3) highlight central inflammatory signaling. The pattern is consistent with a robust, possibly sustained inflammatory microglial state with recruitment and signaling functions active.
+
+### Cluster 1
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|----------|----------|----------|----------|---------------------------------|
+| Zfp36 | Microglia | Homeostatic microglia | Downregulated | RNA-binding protein promoting resolution of inflammation; reduced expression suggests loss of anti-inflammatory tone. |
+| Btg2 | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | Early-response regulator; decreased levels may indicate reduced acute transcriptional activation. |
+| Cd83 | Microglia | Activated/antigen-presenting microglia | Downregulated | Co-stimulatory molecule; lower levels suggest dampened antigen presentation capacity. |
+| Dennd4a | Microglia | Homeostatic microglia | Downregulated | Endosomal trafficking regulator; reduced expression may impair normal vesicular function. |
+| Atf3 | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | Stress-responsive transcription factor; decrease suggests reduced acute stress response. |
+| Rel | Microglia | Activated/inflammatory microglia (AIM) | Downregulated | NF-κB subunit; downregulation indicates suppressed inflammatory transcription program. |
+| Ier5 | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | Early-response transcriptional regulator; lower levels indicate reduced activation. |
+| Jun | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | AP-1 complex member; decreased expression points to reduced stimulus-driven gene expression. |
+| H3f3b | Microglia | Homeostatic microglia | Downregulated | Histone variant linked to active transcription; reduction may reflect lower transcriptional turnover. |
+| Mapkapk2 | Microglia | Activated/inflammatory microglia (AIM) | Downregulated | p38 MAPK pathway kinase; downregulation suggests decreased cytokine production signaling. |
+| Baiap2l2 | Microglia | Potentially reactive microglia | Upregulated | Actin cytoskeleton regulator; increased levels may support morphological remodeling. |
+| Cebpb | Microglia | Activated/inflammatory microglia (AIM) | Downregulated | Transcription factor driving inflammatory and DAM programs; reduced levels suggest attenuated activation. |
+| Zfp36l1 | Microglia | Homeostatic microglia | Downregulated | Post-transcriptional regulator of inflammatory mRNAs; decrease may affect RNA stability control. |
+| Or5v1b | Microglia | Uncharacterized/possible off-target expression | Upregulated | Olfactory receptor-like; rare in microglia, upregulation could reflect atypical activation. |
+| Tmem163 | Microglia | Homeostatic microglia | Upregulated | Vesicular zinc transporter; increase may relate to altered ion handling in reactive states. |
+| Btg1 | Microglia | Immediate early gene (IEG)-activated microglia | Downregulated | Cell cycle regulator with early-response profile; reduction aligns with quiescence. |
+| Plek | Microglia | Homeostatic microglia | Downregulated | Cytoskeletal-associated protein; decrease may reflect reduced motility or phagocytic activity. |
+| Serpine2 | Microglia | Remodeling/reactive microglia | Upregulated | Extracellular matrix regulator; elevated in tissue remodeling and repair contexts. |
+| Cst7 | Microglia | Activated/DAM microglia | Downregulated | Cysteine protease inhibitor; lower expression may impair control of proteolytic activity. |
+| Ank | Microglia | Homeostatic microglia | Downregulated | Cytoskeletal anchoring protein; decrease may indicate reduced stability of cell processes. |
+
+Most genes in cluster 1 are downregulated and associated with homeostatic, immediate early, or inflammatory microglial programs, indicating an overall suppression of activation and immune signaling. Notably, transcription factors (Rel, Jun, Cebpb) and RNA regulators (Zfp36, Zfp36l1) are decreased, suggesting reduced inflammatory transcription and mRNA turnover. A few genes (Baiap2l2, Tmem163, Serpine2) are upregulated, hinting at selective morphological remodeling and extracellular matrix modulation. Overall, the profile suggests a shift toward a less inflammatory, potentially partially remodeling/reactive microglial state.
+
+### Cluster 2
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|----------|----------|----------|----------|----------------------------------|
+| Ctsb | Microglia | Lysosomal/phagocytic (DAM-like) | Downregulated | Cathepsin B; reduced levels suggest diminished phagolysosomal activity typical of DAM/phagocytic programs. |
+| Serpine2 | Microglia | Remodeling/reactive | Downregulated | ECM serine protease inhibitor; decrease implies less extracellular remodeling. |
+| Tgm2 | Microglia | Activated/reactive microglia | Upregulated | Transglutaminase 2; induced in activated microglia, supports adhesion/phagocytosis and Aβ handling. |
+| Cacnb2 | Microglia | Reactive signaling microglia | Upregulated | Ca²⁺ channel β subunit; heightened Ca²⁺ signaling aligns with reactive state transitions. |
+| Klf2 | Microglia | Homeostatic/anti‑inflammatory | Upregulated | Transcription factor that restrains inflammatory programs; rise suggests homeostatic pushback. |
+| Il1a | Microglia | Activated/inflammatory microglia (AIM) | Upregulated | Pro‑inflammatory cytokine driving local neuroinflammation. |
+| Socs3 | Microglia | Activated (JAK/STAT feedback) | Upregulated | Negative feedback regulator of cytokine signaling; elevation marks acute activation with braking. |
+| Tmem119 | Microglia | Homeostatic microglia | Upregulated | Core microglial identity marker; increase indicates preserved homeostatic signature. |
+| Trem2 | Microglia | DAM/phagocytic | Downregulated | Key receptor for DAM induction and lipid/Aβ phagocytosis; drop argues against DAM engagement. |
+| Cd68 | Microglia | Phagocytic/activated | Downregulated | Lysosomal/phagolysosomal marker; reduction indicates lower phagocytic tone. |
+| Syngr1 | Microglia | Contamination/neuronal signal | Downregulated | Synaptic vesicle protein (neuronal); decreased expression fits reduced ambient neuronal RNA. |
+| Fos | Microglia | Immediate‑early gene (IEG)‑activated | Upregulated | Classic IEG; marks acute transcriptional activation. |
+| Ccr5 | Microglia | Chemotactic/inflammatory | Upregulated | Chemokine receptor; suggests migration/recruitment during inflammatory response. |
+| Crybb1 | Microglia | Stress‑responsive/reactive | Upregulated | Crystallin family chaperone; induced under cellular stress in glia. |
+| Nr4a1 | Microglia | IEG/anti‑inflammatory reprogramming | Upregulated | Nuclear receptor shaping rapid activation and tolerance programs. |
+| Jun | Microglia | IEG‑activated | Upregulated | AP‑1 component; hallmark of acute stimulus response. |
+| Rapgef5 | Microglia | Motility/chemotaxis signaling | Upregulated | Rap1 GEF; supports cytoskeletal dynamics and process motility in reactive microglia. |
+| Ctsd | Microglia | Lysosomal/phagocytic (DAM-like) | Downregulated | Cathepsin D; decrease reinforces reduced lysosomal/phagocytic program. |
+| Jund | Microglia | IEG‑activated | Upregulated | AP‑1 family factor; marks early activation. |
+| Rnf19b | Microglia | Stress/adaptive (proteostasis) | Upregulated | E3 ubiquitin ligase (ERAD/quality control); elevation indicates proteostatic stress response. |
+
+Cluster 2 combines strong IEG/cytokine activation (Fos/Jun/Jund, Il1a, Socs3, Ccr5) with preservation of homeostatic identity (Tmem119, Klf2↑) and suppression of DAM/phagolysosomal genes (Trem2, Cd68, Ctsb, Ctsd↓). This pattern supports an acute, non‑phagocytic inflammatory microglial state with chemotactic/migratory bias and active negative‑feedback (Socs3), rather than a classic Trem2⁺ DAM phenotype. Tgm2 and stress markers (Crybb1, Rnf19b) suggest matrix/adhesion changes and proteostatic adaptation during this transient activation.
+
+### Cluster 3:
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|---------|---------|---------|---------|-----------------------------------|
+| Spp1 | Microglia | Spp1⁺ DAM (osteopontin-high) | Upregulated | Canonical Spp1⁺ neurodegeneration-associated subset; linked to phagolysosomal activation and plaque-proximal microglia. |
+| Atp6v0d2 | Microglia | Spp1⁺ DAM | Upregulated | Lysosomal/osteoclast-like proton pump subunit enriched in Spp1⁺ DAM; supports catabolic/phagolysosomal programs. |
+| H2-Aa | Microglia | MHC-II⁺ antigen-presenting microglia (ARM) | Upregulated | MHC-II component indicating antigen presentation. |
+| Gpnmb | Microglia | DAM/MGnD | Upregulated | Injury/DAM marker enriched in neurodegenerative microglia and lipid-handling states. |
+| H2-Eb1 | Microglia | MHC-II⁺ ARM | Upregulated | MHC-II beta-chain; antigen presentation program. |
+| Itgax | Microglia | DAM/MGnD (CD11c⁺) | Upregulated | CD11c⁺ “activated”/MGnD microglia; plaque-associated. |
+| Fabp5 | Microglia | Lipid-handling DAM / LDAM-like | Upregulated | Fatty-acid–binding protein; lipid metabolism and phagocytosis in activated microglia. |
+| Dkk2 | Microglia | Neurodegenerative-DAM subset | Upregulated | Wnt antagonist selectively induced in mouse neurodegenerative microglia near plaques. |
+| Trpc4 | Microglia | Activated/DAM-associated | Upregulated | Ca²⁺ channel up in activated microglia; supports motility/chemotaxis in DAM contexts. |
+| H2-Ab1 | Microglia | MHC-II⁺ ARM | Upregulated | MHC-II alpha-chain; part of antigen-presenting signature. |
+| Ctnna3 | Microglia | Activated/DAM-associated | Upregulated | Cell-adhesion gene reported in activated/DAM-like microglia; may reflect contact with dystrophic neurites. |
+| Siglech | Microglia | Homeostatic | Downregulated | Homeostatic microglia marker; its loss marks transition to non-homeostatic/DAM states. |
+| P2ry12 | Microglia | Homeostatic | Downregulated | Core homeostatic microglia receptor; down in activated/DAM microglia. |
+| Cst7 | Microglia | DAM/MGnD | Upregulated | Cathepsin inhibitor robustly induced in DAM; linked to lysosomal remodeling. |
+| Igf1 | Microglia | IGF1⁺ reparative microglia | Upregulated | Trophic/reparative program; promotes oligodendrocyte/myelin support within disease context. |
+| Plau | Microglia | Activated ECM-remodeling/DAM | Upregulated | uPA; extracellular matrix remodeling and migration; increased in activated plaque-associated microglia. |
+| Cd74 | Microglia | MHC-II⁺ ARM | Upregulated | Invariant chain for MHC-II; hallmark of antigen-presenting microglia. |
+| Mamdc2 | Microglia | Activated/DAM-associated | Upregulated | Extracellular/adhesion protein reported in activated plaque-proximal microglia subsets. |
+| Lpcat2 | Microglia | Pro‑inflammatory eicosanoid program | Downregulated | Arachidonoyl-lysophosphatidylcholine acyltransferase; lower levels suggest shift away from classical lipid‑inflammatory signaling. |
+| Lgals3 | Microglia | Activated/DAM (Galectin‑3⁺) | Upregulated | Galectin‑3 drives phagocytosis and TREM2 signaling; strong DAM/plaqued‑associated marker. |
+
+Most markers map to disease-associated microglia (DAM), including a prominent Spp1⁺/osteoclast‑like module (Spp1, Atp6v0d2, Gpnmb, Fabp5, Dkk2, Itgax, Cst7, Lgals3) and an antigen-presenting MHC‑II arm (H2-Aa/H2-Ab1/H2-Eb1, Cd74). Homeostatic signatures (P2ry12, Siglech) are down, consistent with an activated, plaque‑proximal state. Additional genes (Plau, Trpc4, Ctnna3, Mamdc2) support activation/motility and ECM remodeling, while Igf1 suggests a concurrent reparative program. Overall, cluster 3 reflects plaque‑associated, antigen‑presenting Spp1⁺ DAM with suppressed homeostatic identity.
+
+### Cluster 4
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|----------|----------|----------|----------|---------------------------------|
+| Cacnb2 | Microglia | Reactive signaling microglia | Upregulated | Voltage-gated Ca²⁺ channel β subunit; promotes altered Ca²⁺ dynamics during activation and migration. |
+| Ctsb | Microglia | Lysosomal/phagocytic (DAM-like) | Downregulated | Cathepsin B; decrease suggests reduced lysosomal proteolysis and phagocytic capacity. |
+| Plek | Microglia | Homeostatic microglia | Downregulated | Cytoskeletal-associated protein; reduced levels may impair motility and process extension. |
+| Bank1 | Microglia | Immune signaling–biased microglia | Upregulated | Scaffold protein in B/TLR signaling; induction suggests immune receptor pathway engagement. |
+| Gm10790 | Microglia | Uncharacterized/reactive | Upregulated | Predicted gene with reported glial expression in activation contexts. |
+| Tyrobp | Microglia | DAM/phagocytic | Downregulated | Adaptor for TREM2/Syk signaling; lower levels indicate reduced DAM engagement. |
+| Frmd4a | Microglia | Reactive/motility remodeling | Upregulated | Actin cytoskeleton regulator; supports polarity and migration. |
+| Tmem119 | Microglia | Homeostatic microglia | Upregulated | Core homeostatic marker; maintenance suggests preserved identity amid activation. |
+| Ccr5 | Microglia | Chemotactic/inflammatory | Upregulated | Chemokine receptor driving migration toward inflammatory cues. |
+| Rapgef5 | Microglia | Motility/chemotaxis signaling | Upregulated | Regulates Rap1 activity and cytoskeletal rearrangement in reactive microglia. |
+| Maf | Microglia | Anti-inflammatory/regulatory | Upregulated | Transcription factor promoting repair/tolerogenic states; elevated in certain homeostatic-like contexts. |
+| Cd9 | Microglia | DAM/phagocytic | Downregulated | Tetraspanin in exosome/lysosome biology; decrease indicates reduced vesicular/phagocytic functions. |
+| Trem2 | Microglia | DAM/phagocytic | Downregulated | Receptor essential for DAM induction; lower expression suggests non-DAM inflammatory state. |
+| A830008E24Rik | Microglia | Uncharacterized/reactive | Upregulated | Predicted transcript enriched in activated glia. |
+| Lyz2 | Microglia | DAM/phagocytic | Downregulated | Lysozyme C2; loss indicates reduced microbicidal/lysosomal activity. |
+| Cd68 | Microglia | Lysosomal/phagocytic | Downregulated | Lysosomal membrane glycoprotein; decline suggests reduced phagolysosomal activity. |
+| Ctsz | Microglia | Lysosomal/phagocytic | Downregulated | Cathepsin Z; decrease aligns with downregulated phagolysosomal program. |
+| Csmd3 | Microglia | Reactive/adhesion-modulating | Upregulated | Large complement regulatory protein; linked to cell–cell/ECM interactions. |
+| Syngr1 | Microglia | Contamination/neuronal signal | Downregulated | Synaptic vesicle protein; likely ambient neuronal transcript reduced in this cluster. |
+| Ifitm10 | Microglia | Stress-adaptive | Upregulated | IFITM family member; up in stress/injury contexts, potential role in membrane remodeling. |
+
+Cluster 4 shows a mixed profile: upregulation of signaling, motility, and immune-modulating genes (Cacnb2, Bank1, Ccr5, Rapgef5, Maf) with concurrent preservation of homeostatic identity (Tmem119↑) and marked downregulation of DAM/phagolysosomal machinery (Trem2, Tyrobp, Cd68, Ctsb, Ctsz, Lyz2). This suggests a non-DAM reactive state biased toward chemotaxis and cytoskeletal remodeling rather than debris clearance. The pattern could reflect microglia mobilized for migration or vascular surveillance, rather than plaque-engulfment, potentially relevant to vascular and inflammatory components of ARIA where microglial motility and cytokine signaling are heightened while phagocytosis is reduced.
+
+### Cluster 5
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|----------|----------|----------|----------|-----------------------------------|
+| Itgam | Microglia | DAM/phagocytic | Downregulated | Encodes CD11b; key for adhesion and phagocytosis; reduction indicates lowered phagocytic activation. |
+| Ifi207 | Microglia | Interferon-responsive/reactive | Upregulated | IFN-inducible gene; upregulation marks antiviral/innate immune activation. |
+| C1qb | Microglia | Complement-mediated DAM | Downregulated | Complement component; downregulation suggests reduced synaptic pruning and opsonization. |
+| Ccl4 | Microglia | Chemotactic/inflammatory | Upregulated | Pro-inflammatory chemokine; promotes immune cell recruitment to CNS lesions. |
+| Lilrb4a | Microglia | Regulatory/immune-checkpoint | Upregulated | Inhibitory receptor; induced in inflammatory contexts to limit activation. |
+| Ly86 | Microglia | Innate immune/TLR signaling | Upregulated | MD-1 protein; modulates TLR4/MD-2 signaling in microglial innate immune responses. |
+| C1qc | Microglia | Complement-mediated DAM | Downregulated | Complement cascade subunit; loss further supports reduced opsonization activity. |
+| Fgf13 | Microglia | Reactive/stress-adaptive | Upregulated | Cytosolic growth factor family member; linked to microtubule stabilization in reactive states. |
+| C1qa | Microglia | Complement-mediated DAM | Downregulated | Initiator of classical complement pathway; decreased expression suggests suppressed complement activity. |
+| Klf6 | Microglia | Pro-inflammatory transcriptional reprogramming | Upregulated | Induced by stress/injury; regulates inflammatory and migratory genes. |
+| Dusp1 | Microglia | Anti-inflammatory/feedback | Upregulated | MAPK phosphatase; limits MAPK-driven pro-inflammatory signaling. |
+| Atf3 | Microglia | Immediate-early gene (IEG)-activated | Upregulated | Stress-responsive transcription factor; marks acute activation. |
+| P2ry12 | Microglia | Homeostatic | Downregulated | Purinergic receptor; loss is a hallmark of activated, non-homeostatic states. |
+| Marcks | Microglia | Cytoskeletal/homeostatic | Downregulated | Membrane–actin crosslinker; reduced levels impair process motility and membrane dynamics. |
+| Rgs10 | Microglia | Homeostatic/anti-inflammatory | Downregulated | Regulator of G-protein signaling; decreased levels permit stronger chemokine receptor signaling. |
+| Cst3 | Microglia | Homeostatic/lysosomal | Downregulated | Cystatin C; lysosomal protease inhibitor; loss suggests altered proteolytic control. |
+| Ctss | Microglia | DAM/phagocytic | Downregulated | Cathepsin S; key for antigen processing and myelin degradation; reduced expression indicates diminished phagolysosomal activity. |
+| Hexb | Microglia | Homeostatic | Downregulated | β-Hexosaminidase subunit; essential for lysosomal function; decrease reflects impaired lysosomal metabolism. |
+| Laptm5 | Microglia | Lysosomal/immune activation | Downregulated | Lysosomal membrane protein; reduction suggests suppressed lysosomal activity. |
+| Xylt1 | Microglia | ECM remodeling/reactive | Upregulated | Glycosyltransferase in proteoglycan biosynthesis; may reflect ECM reorganization during injury response. |
+
+Cluster 5 exhibits a marked downregulation of complement components (C1qa/b/c) and multiple lysosomal/phagocytic markers (Itgam, Ctss, Hexb, Laptm5), indicating a suppressed DAM-like phagocytic program. Concurrently, upregulated genes point to a mixed interferon-responsive and inflammatory signaling state (Ifi207, Ccl4, Ly86, Klf6, Atf3) with regulatory feedback mechanisms (Dusp1, Lilrb4a) and ECM remodeling (Xylt1). Loss of homeostatic markers (P2ry12, Marcks, Rgs10, Cst3) reinforces a non-homeostatic activated phenotype, biased toward cytokine production and immune modulation rather than debris clearance.
+
+### Cluster 6
+
+| Gene | Cell | Subtype | Regulation | Notes |
+|-----------|-----------|-----------|-----------|------------------------------|
+| Ifit3 | Microglia | Type I interferon–responsive microglia (IRMs) | Upregulated | IFN-induced protein; hallmark of antiviral/innate immune activation in microglia. |
+| Ifi211 | Microglia | IRMs | Upregulated | Interferon-inducible family member; part of broad IFN-stimulated gene (ISG) program. |
+| Ifi206 | Microglia | IRMs | Upregulated | ISG; contributes to innate antiviral defense. |
+| Ifit2 | Microglia | IRMs | Upregulated | Antiviral effector limiting viral replication; robustly induced by IFN signaling. |
+| Rsad2 | Microglia | IRMs | Upregulated | Viperin; antiviral protein regulating lipid metabolism during innate responses. |
+| Isg15 | Microglia | IRMs | Upregulated | Ubiquitin-like modifier; critical in IFN-induced protein modification during antiviral states. |
+| Mx1 | Microglia | IRMs | Upregulated | Dynamin-like GTPase; classical ISG conferring antiviral resistance. |
+| Ifit3b | Microglia | IRMs | Upregulated | Paralog of Ifit3; IFN-inducible, part of viral RNA sensing and translation suppression pathway. |
+| Ifi213 | Microglia | IRMs | Upregulated | ISG with poorly characterized function; linked to innate immunity. |
+| Oasl2 | Microglia | IRMs | Upregulated | 2′–5′-oligoadenylate synthase–like; antiviral RNA degradation pathway. |
+| A330040F15Rik | Microglia | IRMs | Upregulated | Predicted IFN-inducible transcript; uncharacterized in function. |
+| Ifi209 | Microglia | IRMs | Upregulated | Member of IFN-inducible family; potential nucleic acid sensor. |
+| Slfn5 | Microglia | IRMs | Upregulated | Schlafen family protein; modulates immune responses and cell cycle during activation. |
+| Gm4951 | Microglia | IRMs | Upregulated | Predicted IFN-inducible gene; enriched in viral defense transcriptional programs. |
+| Ifitm3 | Microglia | IRMs | Upregulated | Restricts viral entry by modifying endosomal membranes. |
+| Stat1 | Microglia | IRMs | Upregulated | Master transcription factor for type I/II IFN responses; drives IRM transcriptional network. |
+| Ifi207 | Microglia | IRMs | Upregulated | ISG; part of IFN-driven antiviral gene set. |
+| Rnf213 | Microglia | IRMs | Upregulated | E3 ligase with roles in immunity and vascular remodeling; induced by IFNs. |
+| Sp100 | Microglia | IRMs | Upregulated | Nuclear body protein; upregulated in antiviral and inflammatory contexts. |
+| Herc6 | Microglia | IRMs | Upregulated | E3 ligase mediating ISGylation; essential for ISG15 conjugation pathway. |
+
+Cluster 6 shows uniform upregulation of type I interferon–stimulated genes (ISGs), including antiviral effectors (Ifit3, Rsad2, Mx1, Ifitm3), nucleic acid sensors (Oasl2, Stat1, Sp100), and ISGylation machinery (Isg15, Herc6). This profile is characteristic of interferon-responsive microglia (IRMs), a distinct activation state often triggered by viral infection, nucleic acid release from damaged cells, or chronic inflammatory cues. The absence of downregulated homeostatic or phagocytic genes suggests a strong, focused IRM polarization rather than mixed activation with DAM or AIM features.
+
+### Summary
+
+| Cluster | Literature-defined subtype | Key evidence from markers | Canonical refs |
+|-------------|-------------|------------------------------|----------------|
+| 0 | Reactive/inflammatory microglia (NF‑κB/IEG‑high AIM) | Cytokines/chemokines and NF‑κB/IEG axis (Tnf, Il1b, Ccl3/4, Nfkbia, Nfkbiz, Egr1, Junb) indicating an acute inflammatory transcriptional program distinct from DAM. | Frameworks distinguishing reactive vs homeostatic/DAM microglia and nomenclature guidance. ([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S0896627322009539?utm_source=chatgpt.com "Microglia states and nomenclature: A field at its crossroads"), [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC7255106/?utm_source=chatgpt.com "Microglial signatures and their role in health and disease - PMC")) |
+| 1 | Transitional/homeostatic‑leaning (resolution/quiescent) | Broad downregulation of IEGs and inflammatory TFs (Jun, Rel, Atf3, Zfp36 family) with minimal activation markers → consistent with a resolving, low‑reactivity state along the reactive→homeostatic continuum. | Microglial state continuum and resolution concepts. ([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S0896627322009539?utm_source=chatgpt.com "Microglia states and nomenclature: A field at its crossroads"), [Frontiers](https://www.frontiersin.org/journals/immunology/articles/10.3389/fimmu.2019.01048/full?utm_source=chatgpt.com "Myeloid Cell and Transcriptome Signatures Associated ...")) |
+| 2 | Reactive/IEG‑activated (AIM) with preserved identity | IEG/cytokine program (Fos, Jun, Il1a, Socs3, Ccr5) but retention of homeostatic identity (Tmem119↑, Klf2↑) and non‑DAM features (Trem2/Cd68/Ctsb/Ctsd↓). | Distinction of reactive/“activated response” states from DAM and homeostatic cores. ([Cell](https://www.cell.com/cell-reports/fulltext/S2211-1247%2819%2930438-3?utm_source=chatgpt.com "The Major Risk Factors for Alzheimer's Disease: Age, Sex ..."), [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC7255106/?utm_source=chatgpt.com "Microglial signatures and their role in health and disease - PMC")) |
+| 3 | Spp1⁺ DAM with MHC‑II⁺ antigen‑presenting ARM module | Canonical DAM/MGnD markers (Spp1, Gpnmb, Itgax, Cst7, Lgals3) with suppression of homeostatic genes (P2ry12↓), plus strong MHC‑II antigen‑presentation (H2‑Aa/Ab1/Eb1, Cd74). | DAM/MGnD (TREM2–APOE axis) and ARM/antigen‑presenting programs. ([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S0092867419310049?utm_source=chatgpt.com "Microglia Biology: One Century of Evolving Concepts"), [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC5719893/?utm_source=chatgpt.com "The TREM2-APOE pathway drives the transcriptional ..."), [Cell](https://www.cell.com/cell-reports/fulltext/S2211-1247%2819%2930438-3?utm_source=chatgpt.com "The Major Risk Factors for Alzheimer's Disease: Age, Sex ...")) |
+| 4 | Chemotactic/migratory reactive microglia (non‑DAM) | Motility/chemotaxis signaling (Ccr5, Rapgef5, Cacnb2, Frmd4a) retained identity (Tmem119↑) with phagolysosomal/DAM axis down (Trem2, Tyrobp, Cd68, Ctsb/Ctsz, Lyz2↓) → reactive but non‑phagocytic. | Reactive (non‑DAM) states within current nomenclature; distinctions from DAM signature. ([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S0896627322009539?utm_source=chatgpt.com "Microglia states and nomenclature: A field at its crossroads"), [Cell](https://www.cell.com/immunity/pdf/S1074-7613%2825%2900172-4.pdf?utm_source=chatgpt.com "Microglia transcriptional states and their functional ...")) |
+| 5 | Cytokine/immune‑modulatory reactive microglia with complement/lysosome‑low | IFN‑tinted inflammatory program (Ifi207, Atf3, Klf6, Ccl4 ↑) alongside reduced complement/lysosomal/DAM machinery (C1qa/b/c, Ctss, Hexb, Laptm5 ↓) and loss of homeostatic markers (P2ry12↓). | Reviews summarizing non‑DAM reactive states vs DAM/complement modules. ([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S221112472030019X?utm_source=chatgpt.com "Review Microglia Heterogeneity in the Single-Cell Era"), [Alzheimer's Journals](https://alz-journals.onlinelibrary.wiley.com/doi/pdf/10.1002/alz.12389?utm_source=chatgpt.com "Diversity of transcriptomic microglial phenotypes in aging and ...")) |
+| 6 | Interferon‑responsive microglia (IRM) | Uniform ISG induction (Ifit2/3/3b, Isg15, Mx1, Rsad2, Oasl2, Stat1, Herc6) defining the IFN‑I program in microglia. | IRM definition and markers in mouse brain. ([PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC8887080/?utm_source=chatgpt.com "Type I interferon responsive microglia shape cortical ..."), [Cell](https://www.cell.com/immunity/pdf/S1074-7613%2822%2900141-8.pdf?utm_source=chatgpt.com "Concerted type I interferon signaling in microglia and ...")) |
+
+Across clusters, we observe classic Spp1⁺ DAM/ARM features (cluster 3), a robust IFN‑I IRM state (cluster 6), and multiple reactive, non‑DAM states (clusters 0, 2, 4, 5) differing by IEG/NF‑κB intensity, chemotaxis/motility bias, and complement/lysosome suppression. One cluster trends toward resolution/quiescence (cluster 1). Together, these assignments align with established microglial taxonomies distinguishing homeostatic, reactive (AIM/ARM), DAM/MGnD, and IRM states in mouse models of neurodegeneration and inflammation. ([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S0896627322009539?utm_source=chatgpt.com "Microglia states and nomenclature: A field at its crossroads"), [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC7255106/?utm_source=chatgpt.com "Microglial signatures and their role in health and disease - PMC"), [Cell](https://www.cell.com/cell-reports/fulltext/S2211-1247%2819%2930438-3?utm_source=chatgpt.com "The Major Risk Factors for Alzheimer's Disease: Age, Sex ..."))
