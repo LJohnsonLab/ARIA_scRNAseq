@@ -12,7 +12,7 @@ Purpose: Gene set enrichment analysis (GSEA), comparison of genes from individua
 
 Output: Heatmap, Geyser plot, split enrichment violin plot, tables and more.
 
-README: Contains nomenclature for output files and acronym definitions. !!Please try to follow them as it can get very confusing, very quickly!!
+README: Contains nomenclature for output files and acronym definitions. !!Please try to follow them as it can get very confusing very quickly!!
 
 Vignette: <https://github.com/BorchLab/escape/blob/master/vignettes/escape.Rmd>
 
