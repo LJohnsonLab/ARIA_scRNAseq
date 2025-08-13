@@ -1,0 +1,170 @@
+---
+title: "Escape R Package"
+output: html_document
+date: "2025-07-09"
+---
+
+### Escape Pathway Analysis
+
+Input: Processed (Seurat) single cell RNA seq. object (RDS).
+
+Purpose: Gene set enrichment analysis (GSEA), comparison of genes from individual cells to pathway gene sets, of processed single cell RNA sequencing data with curated pathways.
+
+Output: Heatmap, Geyser plot, split enrichment violin plot, tables and more.
+
+README: Contains nomenclature for output files and acronym definitions. !!Please try to follow them as it can get very confusing, very quickly!!
+
+Vignette: <https://github.com/BorchLab/escape/blob/master/vignettes/escape.Rmd>
+
+```{r loading libraries}
+library(escape)
+library(Seurat)
+library(SingleCellExperiment)
+library(msigdbr) 
+library(GSVA)
+library(AUCell)
+library(ggplot2)
+library(tibble)
+library(dplyr)
+library(fgsea)
+library(ggraph)
+```
+
+```{r Setting up input file and gene sets}
+
+# import and read RDS file
+
+sc_obj <- readRDS("/Users/cclu223/Desktop/Single_Cell_Analysis/stroke_5xFAD/Output/Merged_Analysis/merged_seurat.rds")
+
+# retrieve gene set from database (using hallmark pathway library)
+
+hallmark_df <- msigdbr(species = "Mus musculus", category = "H")
+
+# view the different pathways from the dataset
+
+unique(hallmark_df$gs_name)
+
+# formatting gene set so Escape can use it 
+
+gene.sets <- hallmark_df |>
+  group_by(gs_name) |>
+  summarise(genes = list(unique(gene_symbol))) |>
+  deframe()
+
+# looking at new format of gene set
+
+str(gene.sets, max.level = 1)
+
+```
+
+```{r Subset clusters }
+
+# subsetting out clusters 
+
+Idents(sc_obj) <- "seurat_clusters"
+
+DimPlot(sc_obj, label = TRUE)
+
+# cell_type is a column in metadata that contains the names (cell types) of the clusters 
+
+table(sc_obj$cell_type, Idents(sc_obj))
+
+microglia_clusters <- subset(sc_obj, idents = c("3", "4", "5", "6", "11", "15", "22")) # UPDATE THE CLUSTERS 
+
+# Microglia re-clustering and processing
+
+microglia_clusters <- SCTransform(microglia_clusters, verbose = FALSE)
+
+microglia_clusters <- RunPCA(microglia_clusters, verbose = FALSE)
+
+microglia_clusters <- FindNeighbors(microglia_clusters)
+
+microglia_clusters <- FindClusters(microglia_clusters)
+
+microglia_clusters <- RunUMAP(microglia_clusters, dims = 1:20)
+
+DimPlot(microglia_clusters)
+
+```
+
+```{r Score the cells}
+
+# running escape on seurat obj or subset obj
+
+microglia_clusters <- runEscape(microglia_clusters, 
+                           method = "AUCell", 
+                           gene.sets = gene.sets, 
+                           groups = 1000, 
+                           min.size = 3, 
+                           new.assay.name = "escape.AUCell")
+
+# check to make sure runEscape actually worked
+
+escape_auc <- sc_obj[["escape.AUCell"]]
+names(escape_auc@layers)  # should show "data", maybe "scaled.data"
+dim(escape_auc@layers[["data"]])
+
+head(escape_auc@layers[["data"]])
+
+
+# normalization, what is the best to scale by for scale.factor = 
+
+microglia_clusters <- performNormalization(input.data = microglia_clusters, 
+                                          assay = "escape.AUCell", 
+                                          gene.sets = gene.sets)
+
+```
+
+```{r}
+
+# quick visualization 
+
+FeaturePlot(microglia_clusters, features = "Trem2", 
+            cols = c(low = "#040404", high = "#FF0000")) +
+  theme(plot.title = element_blank())
+
+# heatmap 
+
+MC_hALL_heatmap <- heatmapEnrichment(microglia_clusters,  
+                  gene.set.use = "all",
+                  assay = "escape.AUCell_normalized",
+                  cluster.rows = TRUE, 
+                  cluster.columns = FALSE,
+                  palette = "Blue-Red 2"
+                  )
+
+ggsave("/Users/cclu223/Desktop/Single_Cell_Analysis/stroke_5xFAD/Output/Escape_Analysis/MC_hALL_heatmap.png", 
+       plot = MC_hALL_heatmap) # UPDATE PATH
+
+# individual gene set focus 
+
+MC_hIFNg_geyser <- geyserEnrichment(microglia_clusters, 
+                 assay = "escape.AUCell_normalized", 
+                 gene.set = "HALLMARK-INTERFERON-GAMMA-RESPONSE", # UPDATE PATHWAY
+                 order.by = "mean",
+                 palette = "Spectral", 
+                 facet.by = "orig.ident", 
+                 group.by = "seurat_clusters")
+
+ggsave("/Users/cclu223/Desktop/Single_Cell_Analysis/stroke_5xFAD/Output/Escape_Analysis/MC_hIFNg_geyser.png", 
+       plot = MC_hIFNg_geyser) # UPDATE PATH
+
+# figure out what the best thing to group them by is
+
+# ridge plot for enrichment
+
+MC_hIF_ridge <- ridgeEnrichment(microglia_clusters, 
+                assay = "escape.AUCell_normalized", 
+                gene.set = "HALLMARK-INFLAMMATORY-RESPONSE", 
+                facet.by = "orig.ident", 
+                group.by = "seurat_clusters")
+
+# splitting enrichment on violin plot
+
+MC_hCholH_splitenrich <- splitEnrichment(microglia_clusters,
+                assay = "escape.AUCell_normalized", 
+                gene.set = "HALLMARK-CHOLESTEROL-HOMEOSTASIS",
+                split.by = "orig.ident",
+                group.by = "seurat_clusters")
+
+```
