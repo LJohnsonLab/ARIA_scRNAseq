@@ -43,11 +43,11 @@ Comparison of UMAPs previously annotated using ScType and clustered with Seurat.
 #| fig-width: 12
 
 d1 <- DimPlot(alldata, label = TRUE, repel = T, label.size = 5) + 
-    NoLegend()
+    NoLegend() + ggtitle("Seurat Clusters")
 
 Idents(alldata) <- alldata$sctype_classification
 d2 <- DimPlot(alldata, label = TRUE, repel = T, label.size = 4,) + 
-    NoLegend() 
+    NoLegend() + ggtitle("Automatic annotation with ScType")
 
 d1|d2
 ```
@@ -1267,23 +1267,53 @@ This set shows a dual identity: a strong choroid plexus/ependymal epithelium sig
 
 ### Grouping of clusters by major cell class and most likely subtype
 
-| Group                                            | Clusters              | Main Subtype(s)                                           | Summary Notes                                                                                                           |
-| ------------------------------------------------ | --------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Excitatory neurons                               | 17, 26                | Cortical/hippocampal pyramidal, Purkinje, granule neurons | Glutamatergic projection neurons with regional specializations (Grin2a, Grid2, Gria4).                                  |
-| Inhibitory neurons                               | 20                    | Developing GABAergic interneurons                         | Dlx1/2, Arx, Sp9 define immature inhibitory lineage despite some excitatory markers.                                    |
-| Astrocytes                                       | 10, 11                | Protoplasmic, perivascular/ECM astrocytes                 | GABA handling (Slc6a11, Abat) and ECM/vascular interaction (Sparc, Lama2, Gfap).                                        |
-| Oligodendrocytes (mature)                        | 4, 9                  | Myelinating OLs                                           | Myelin/lipid programs (Aspa, Abca2, Ermn, Gjb1, Klk6, Trf).                                                             |
-| OPCs and newly formed OLs                        | 25                    | OPC → NFOL                                                | Pdgfra, Olig1/2, Lpar1; early myelin and lipid synthesis genes.                                                         |
-| Microglia — homeostatic                          | 5                     | Homeostatic microglia                                     | P2ry12, Siglech define resident microglia in resting state.                                                             |
-| Microglia — activated/DAM                        | 0, 1, 2, 3, 8, 12, 14 | DAM, MHC-II+, IFN-responsive microglia                    | Trem2/Spp1, MHC-II genes (H2, Cd74), ISGs (Mx1/Ifit), lipid and iron metabolism, hypoxia responses (Hif1a, P4ha1).      |
-| Perivascular/border-associated macrophages (BAM) | 22                    | Mrc1⁺Cd163⁺ BAM                                           | M2-like scavenging profile (Maf, Tsc22d3, Stab1, Fcgr2b) at vascular interface.                                         |
-| Endothelial cells                                | 6                     | Capillary/venous endothelium                              | Tight junction (Ocln), caveolae (Cav2), metabolic transporters (Slc16a4).                                               |
-| Pericytes & vascular smooth muscle cells (SMC)   | 19                    | Capillary pericytes, arteriolar SMC                       | Contractile and ion channel genes (Pdgfrb, Abcc9/Kcnj8, Myh11, Tagln).                                                  |
-| Perivascular fibroblasts                         | 27                    | ECM-rich vascular fibroblasts                             | Matrix proteins (Dcn, Aspn, Efemp1, Ltbp1, Ogn) around vessels.                                                         |
-| Ependymal/choroid plexus                         | 16, 24, 28            | Motile ciliated ependyma, choroid plexus epithelium       | Foxj1-driven ciliogenesis (Cfap family) and secretory CP markers (Ttr, Folr1, Wfdc2).                                   |
-| T lymphocytes                                    | 15                    | CD8⁺ tissue-resident/effector T cells                     | TCR complex (Cd3e/g, Trac), cytotoxic markers (Cd8b1, Runx3, Ctsw), Cxcr6 TRM.                                          |
-| Mixed neurovascular interface                    | 13, 23                | Neuron–endothelial–microglia/pericyte niche               | Combination of neuronal, endothelial, and pericyte/microglia genes indicating vessel-associated mixed cell populations. |
-| Proliferating cells                              | 28                    | Cycling progenitors (multiple lineages)                   | Pure cell-cycle module (Mki67, Top2a, Cenp family) without a single mature identity.                                    |
 
 
 
+```{r}
+lance <- alldata_clean@meta.data |> 
+    mutate(lance_classification = fct_collapse(seurat_clusters,
+                                               Microglia = c("0","1","2","3","5","8","12","13","14","28"),
+                                               VMC = c("23","27"),
+                                               Endothelial = c("6","19"),
+                                               Astrocytes = c("26","10","11"),
+                                               BAM = "22",
+                                               `Choroid Plexus` = c("29","16"),
+                                               Ependymal = "24",
+                                               NPC = "20",
+                                               Neurons = "17",
+                                               OPC = "25",
+                                               Oligodendrocytes = c("7","4","9"),
+                                               `T-cell`= "15")) 
+
+alldata_clean$lance_classification <- lance$lance_classification
+
+
+```
+
+
+```{r}
+#| column: page
+#| fig-width: 12
+
+Idents(alldata_clean) <- alldata_clean$seurat_clusters
+d1 <- DimPlot(alldata_clean, label = TRUE, repel = T, label.size = 5) + 
+    NoLegend() + ggtitle("Seurat Clusters")
+
+Idents(alldata_clean) <- alldata_clean$lance_classification
+d2 <- DimPlot(alldata_clean, label = TRUE, repel = T, label.size = 5,) + 
+    NoLegend() + ggtitle("Manual annotation")
+
+d1|d2
+```
+VMC: Vascular mural cells
+BAM: Border associated macrophages
+NPC: Neuroprogenitor cells
+OPC: Oligodendrocyte precursor cells
+
+```{r}
+table(alldata_clean$lance_classification) |> 
+    t() |> 
+    kbl(caption = "number of cells") |> 
+    kable_styling("striped")
+```
