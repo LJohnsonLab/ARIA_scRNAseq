@@ -5,11 +5,11 @@ Purpose: Gene set enrichment analysis (GSEA) of processed single cell RNA sequen
 
 FILE NAMING
 
-[clusters]_[pathway]_[plot].[extension]
+[project]_[clusters]_[pathway]_[plot].[extension]
 
-Example. MC_hIFNg_geyser => microglia clusters, hallmark interferon gamma response pathway, geyser plot
+Example. ARIA_MC_hIFNg_geyser => ARIA project, microglia clusters, hallmark interferon gamma response pathway, geyser plot
 
-Example. AllC_hCholH_splitenrich => all clusters, hallmark cholesterol homeostasis pathway, split enrichment violin plot
+Example. ARIA_AllC_hCholH_splitenrich => ARIA project, all clusters, hallmark cholesterol homeostasis pathway, split enrichment violin plot
 
 
 ACRONYMS
