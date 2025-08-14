@@ -6,4 +6,4 @@ Download the full dataset from the following [Dropbox link](https://www.dropbox.
 and place the files inside the data folder _before running or analyzing the project_.
 
 The results from the analysis are available in a web format via GitHub Pages at:
-https://ljohnsonlab.github.io/ARIA_snRNAseq/
+https://ljohnsonlab.github.io/ARIA_scRNAseq/
