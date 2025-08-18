@@ -1,0 +1,144 @@
+---
+title: "Differences in microglia by sample & treatment"
+subtitle: ""
+date: today
+embed-resources: true
+execute: 
+  warning: false
+  echo: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(kableExtra)
+library(compareGroups)
+library(corrplot)
+library(pheatmap)
+
+# load the previously saved reclustered object (to save time)
+load("data/20250818-microglia_res0.3_withPseudotimes.Rdata")
+
+```
+## Proportions (%) of Microglial Statea Across Samples and Treatments
+
+```{r}
+
+# Reference table mapping each sample ID to its treatment type
+sample_index <- microglia@meta.data |> 
+    # Keep only unique combinations of sample ID (orig.ident) and treatment group (type)
+    distinct(Mouse.ID, Treatment.Group)   
+
+
+# Table of cluster composition per sample, convert counts to percentages, and add treatment info
+cell <- microglia@meta.data |> 
+    # Group cells by sample and Seurat cluster
+    group_by(Mouse.ID, final_clusters) |> 
+    # Count number of cells in each (sample, cluster) combination
+    summarize(n = n()) |> 
+    # Reshape so that sample IDs become columns and values are cell counts
+    pivot_wider(names_from = Mouse.ID, values_from = n) |> 
+    # For all columns except 'final_clusters', convert counts to percentages per cluster
+    mutate(across(-final_clusters, \(x) round(x / sum(x) * 100, 1))) |> 
+    # Make the 'final_clusters' column the row names
+    column_to_rownames("final_clusters") |> 
+    # Transpose so that samples are rows and clusters are columns
+    t() |> 
+    # Convert the matrix back into a standard data frame
+    as.data.frame() |> 
+    # Turn row names (sample IDs) into a column
+    rownames_to_column(var = "Mouse.ID") |> 
+    # Join treatment type information from 'sample_index'
+    inner_join(sample_index, by = "Mouse.ID")
+```
+
+
+
+Relative abundance of each microglial Seurat-defined cluster in individual samples and compared proportions between the Aducanumab-treated and IgG control groups.\
+
+```{r}
+#| column: page
+#| fig-width: 12
+cell_longer <- cell |> 
+    pivot_longer(`0`:`6`, names_to = "cluster") |> 
+    mutate(cluster = fct_inseq(cluster))
+
+ggplot(cell_longer,aes(x= Mouse.ID, y = value, fill = cluster))+
+    geom_col()+
+    labs(y = "%")+
+    facet_wrap( ~Treatment.Group)+
+    theme_minimal()+
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_text(size=16),
+          axis.text.y = element_text(size=14),
+          strip.text = element_text(size=20))
+    
+
+```
+
+------------------------------------------------------------------------
+
+```{r}
+# Compare all variables in 'cell' across treatment groups using compareGroups
+c1 <- compareGroups(Treatment.Group ~.-Mouse.ID, cell, method = 2)
+t1 <- createTable(c1)
+export2md(t1, caption = "")
+```
+
+Values are median % of microglia in that cluster per sample, with IQR.\
+p.overall: Mann-Whitney p-value
+
+## Pseudobulk analysis
+
+__Aducanumab vs. IgG__
+
+```{r}
+
+pseudo <- AggregateExpression(microglia, assays = "RNA",
+                              group.by = c("Mouse.ID","final_clusters","Treatment.Group"),
+                              return.seurat = T)
+
+pseudo$pseudobulk_id = paste("cluster",pseudo$final_clusters,pseudo$Treatment.Group,sep="_")
+
+Idents(pseudo) <- "pseudobulk_id"
+```
+
+
+### Homeostatic (Cluster 1)
+
+```{r}
+
+bulk_0 <- FindMarkers(pseudo,
+                      ident.1 ="cluster_0_Adu",
+                      ident.2 = "cluster_0_IgG",
+                      test.use = "DESeq2")
+
+
+bulk_0_top <- bulk_0 |> 
+    filter(p_val_adj<0.05)
+
+kbl(bulk_0_top) |> 
+    kable_styling("striped")
+```
+
+### DAM (Cluster 3)
+
+```{r}
+
+bulk_3 <- FindMarkers(pseudo,
+                      ident.1 ="cluster_3_Adu",
+                      ident.2 = "cluster_3_IgG",
+                      test.use = "DESeq2")
+
+
+bulk_3_top <- bulk_3 |> 
+    filter(p_val_adj<0.05)
+
+kbl(bulk_3_top) |> 
+    kable_styling("striped")
+```
