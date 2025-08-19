@@ -20,11 +20,21 @@ library(compareGroups)
 library(corrplot)
 library(pheatmap)
 
-# load the previously saved reclustered object (to save time)
-load("data/20250818-microglia_res0.3_withPseudotimes.Rdata")
+# load the previously saved reclustered object 
+load("data/20250818-microglia_reclustered_reintegrated.Rdata")
 
 ```
-## Proportions (%) of Microglial Statea Across Samples and Treatments
+## Proportions (%) of Microglial States Across Samples and Treatments
+
+```{r}
+#| column: page
+#| fig-width: 12
+#| 
+DimPlot(microglia, label = TRUE, repel = TRUE, label.size = 7,
+        split.by = "Treatment.Group") +
+    NoLegend()
+```
+
 
 ```{r}
 
@@ -64,7 +74,7 @@ Relative abundance of each microglial Seurat-defined cluster in individual sampl
 #| column: page
 #| fig-width: 12
 cell_longer <- cell |> 
-    pivot_longer(`0`:`6`, names_to = "cluster") |> 
+    pivot_longer(`0`:`9`, names_to = "cluster") |> 
     mutate(cluster = fct_inseq(cluster))
 
 ggplot(cell_longer,aes(x= Mouse.ID, y = value, fill = cluster))+
@@ -93,12 +103,12 @@ export2md(t1, caption = "")
 Values are median % of microglia in that cluster per sample, with IQR.\
 p.overall: Mann-Whitney p-value
 
-## Pseudobulk analysis
+## Pseudobulk analysis: _Aducanumab vs. IgG_
 
-__Aducanumab vs. IgG__
+
 
 ```{r}
-
+#| eval: false
 pseudo <- AggregateExpression(microglia, assays = "RNA",
                               group.by = c("Mouse.ID","final_clusters","Treatment.Group"),
                               return.seurat = T)
@@ -108,14 +118,23 @@ pseudo$pseudobulk_id = paste("cluster",pseudo$final_clusters,pseudo$Treatment.Gr
 Idents(pseudo) <- "pseudobulk_id"
 ```
 
+```{r}
 
-### Homeostatic (Cluster 1)
+pseudo <- AggregateExpression(microglia, assays = "RNA",
+                              group.by = c("Mouse.ID","Treatment.Group"),
+                              return.seurat = T)
+
+
+
+Idents(pseudo) <- "Treatment.Group"
+```
+
 
 ```{r}
 
 bulk_0 <- FindMarkers(pseudo,
-                      ident.1 ="cluster_0_Adu",
-                      ident.2 = "cluster_0_IgG",
+                      ident.1 ="Adu",
+                      ident.2 = "IgG",
                       test.use = "DESeq2")
 
 
@@ -126,19 +145,10 @@ kbl(bulk_0_top) |>
     kable_styling("striped")
 ```
 
-### DAM (Cluster 3)
-
-```{r}
-
-bulk_3 <- FindMarkers(pseudo,
-                      ident.1 ="cluster_3_Adu",
-                      ident.2 = "cluster_3_IgG",
-                      test.use = "DESeq2")
 
 
-bulk_3_top <- bulk_3 |> 
-    filter(p_val_adj<0.05)
+Following treatment, microglia from the Alzheimer’s disease mouse model exhibited a broad transcriptional shift consistent with reduced pro-inflammatory activation and metabolic demand. Several mitochondrial genes (*mt-Nd4l*, *mt-Atp8*) and the amino acid transporter *Slc38a2* were downregulated, suggesting diminished oxidative phosphorylation and nutrient uptake that normally support highly activated microglial states. Key inflammatory mediators, including *Il1a*, *Cxcl1*, *Tnfaip2*, and the microRNA host gene *Mir155hg*, also decreased, indicating attenuation of cytokine release, chemotactic signaling, NF-κB pathway activity, and miR-155–driven immune activation. Concomitant reductions in *Prdm1* and regulatory non-coding transcripts (*Gm13849*, *C430049B03Rik*), together with decreased *Rpl35* and *Man1a*, point to lower transcriptional activity, protein synthesis, and secretory function, while the decline in *H2ac20* implies chromatin remodeling toward a less plastic state. Notably, this general dampening of inflammatory pathways was accompanied by increased expression of *Ccl7*, a chemokine involved in monocyte recruitment. This suggests that while most pro-inflammatory signals were suppressed, the treatment selectively maintained or enhanced pathways favoring controlled immune cell trafficking, potentially reflecting a rebalancing of microglial responses rather than their complete silencing. Collectively, these findings support the notion that the treatment shifts microglia away from a broadly activated phenotype toward a more homeostatic yet immunologically competent state, which may contribute to mitigation of chronic neuroinflammation in Alzheimer’s disease.
 
-kbl(bulk_3_top) |> 
-    kable_styling("striped")
-```
+
+
+
