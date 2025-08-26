@@ -13,27 +13,148 @@ editor_options:
 ```{r}
 
 library(tidyverse)
+library(viridis)
 library(Seurat)
+library(scCustomize) # https://samuel-marsh.github.io/scCustomize/
+# devtools::install_github("pwwang/scplotter")
+library(scplotter) # https://github.com/pwwang/scplotter
+library(EnhancedVolcano)
 library(patchwork)
 library(kableExtra)
 library(compareGroups)
-library(corrplot)
+#library(corrplot)
 library(pheatmap)
 
 # load the previously saved reclustered object 
 load("data/20250818-microglia_reclustered_reintegrated.Rdata")
+microglia <- subset(microglia, idents = "8", invert =T)
+
+
+new_cluster_names <- c(
+  "NFkB/IEG Activated",
+  "Homeostatic (Activation competent)",
+  "DAM (Early/Intermediate)",
+  "Remodeling / Injury response",
+  "Homeostatic (canonical)",
+  "DAM (late)",
+  "Antigen presenting",
+  "Interferon responsive",
+  "Proliferating"
+)
+
+microglia <- Rename_Clusters(microglia,
+                new_ident_name = "final_clusters_clean",
+                new_idents = new_cluster_names,
+                overwrite = T)
+
+
+
 
 ```
-## Proportions (%) of Microglial States Across Samples and Treatments
 
+## Total microglia states
+
+Uniform Manifold Approximation and Projection (UMAP) visualization of `r ncol(microglia)` microglial cells. 
+
+Each point represents a single cell, and cells are colored according to unsupervised clusters identified from transcriptomic profiles.
+```{r}
+
+#############################################################################
+### UMAP
+#############################################################################
+DimPlot(microglia, label = F) +
+    scale_colour_brewer(palette = "Paired")+
+    labs(title = "Microglia States") +
+    theme(plot.title = element_text(size=16, hjust = 0.5))+
+    NoAxes()
+```
+
+## T0tal cells
+
+Bar plot showing the number of cells assigned to each cluster, highlighting differences in cluster size and relative abundance.
+```{r}
+
+#############################################################################
+###### Proportion barplot
+#############################################################################
+dist <-  microglia@meta.data |> 
+    count(final_clusters_clean) |> 
+    arrange(desc(n)) |> 
+    mutate(final_clusters_clean = fct_reorder(final_clusters_clean,desc (n)))
+
+prop <- ggplot(dist,aes(x= final_clusters_clean,
+                y = n, fill = final_clusters_clean ))+
+    geom_col(alpha = 0.9)+
+    labs(x="",y="", title = "Total cells")+
+    coord_flip()+
+    scale_fill_brewer(palette = "Paired")+
+    theme_bw()+
+    theme(legend.position = "none",
+         axis.text.x = element_text(size=15, angle = 25),
+         axis.text.y = element_text(size=15),
+         plot.title = element_text(size=16, hjust = 0.5))
+
+prop
+ggsave(prop, file = "glia_proportion.png", dpi = 300, bg = "transparent",
+       path = "/Users/arbones/Dropbox/SyncBriefcase/LAB/UK/scRNA_Akhil/Analysis/figures4Lance/figs")
+```
+
+## Gene Heatmap & hierarchical cluster
+
+Heatmap of normalized expression levels for representative marker genes across clusters, with hierarchical clustering applied to both genes and clusters, providing an overview of the molecular signatures that distinguish microglial states.
 ```{r}
 #| column: page
 #| fig-width: 12
-#| 
-DimPlot(microglia, label = TRUE, repel = TRUE, label.size = 7,
-        split.by = "Treatment.Group") +
-    NoLegend()
+#############################################################################
+####### Heatmap & hierarchical cluster
+#############################################################################
+
+markers_microglia_clean <- FindAllMarkers(microglia, min.pct = 0.3,
+                                     only.pos = F, densify = TRUE)
+
+
+feat <- markers_microglia_clean|>  
+    filter(pct.1 > 0.3) |> 
+    arrange(cluster, p_val_adj) |> 
+    group_by(cluster) |> 
+    slice_head(n = 5)|> 
+    pull(unique(gene))
+
+
+# When return.seurat = TRUE and layer is 'scale.data', the 'counts' layer contains
+# average counts and 'scale.data' is set to the averaged values of 'scale.data'.
+avg_expression <- AverageExpression( microglia,
+  assays = "SCT", 
+  layer = "scale.data", 
+  group.by = "final_clusters_clean",
+  return.seurat = T
+)
+
+
+
+
+data4cluster <- FetchData(avg_expression,c(feat,"P2ry12","Tmem119"), layer = "scale.data") |> 
+    mutate(across(everything(), \(x) ifelse(x>9,9,x)))
+           
+
+
+
+    
+pheatmap(data4cluster,
+         color = colorRampPalette(c("blue", "white", "yellow","orange" ,"red"))(100),
+          cellwidth = 12, cellheight = 10,
+          angle_col = 45, row.names=T) 
+ 
+
+
 ```
+
+
+
+
+
+## Proportions (%) of Microglial States Across Samples and Treatments
+
 
 
 ```{r}
@@ -47,15 +168,15 @@ sample_index <- microglia@meta.data |>
 # Table of cluster composition per sample, convert counts to percentages, and add treatment info
 cell <- microglia@meta.data |> 
     # Group cells by sample and Seurat cluster
-    group_by(Mouse.ID, final_clusters) |> 
+    group_by(Mouse.ID, final_clusters_clean) |> 
     # Count number of cells in each (sample, cluster) combination
     summarize(n = n()) |> 
     # Reshape so that sample IDs become columns and values are cell counts
     pivot_wider(names_from = Mouse.ID, values_from = n) |> 
     # For all columns except 'final_clusters', convert counts to percentages per cluster
-    mutate(across(-final_clusters, \(x) round(x / sum(x) * 100, 1))) |> 
+    mutate(across(-final_clusters_clean, \(x) round(x / sum(x) * 100, 1))) |> 
     # Make the 'final_clusters' column the row names
-    column_to_rownames("final_clusters") |> 
+    column_to_rownames("final_clusters_clean") |> 
     # Transpose so that samples are rows and clusters are columns
     t() |> 
     # Convert the matrix back into a standard data frame
@@ -68,17 +189,17 @@ cell <- microglia@meta.data |>
 
 
 
-Relative abundance of each microglial Seurat-defined cluster in individual samples and compared proportions between the Aducanumab-treated and IgG control groups.\
+Stacked barplot of the relative abundance of each microglial Seurat-defined cluster in individual samples and compared proportions between the Aducanumab-treated and IgG control groups.\
 
 ```{r}
-#| column: page
-#| fig-width: 12
+#| fig-height: 2
 cell_longer <- cell |> 
-    pivot_longer(`0`:`9`, names_to = "cluster") |> 
-    mutate(cluster = fct_inseq(cluster))
+    pivot_longer(2:10, names_to = "State") |> 
+    mutate(State = factor(State,levels = levels(microglia$final_clusters_clean)))
 
-ggplot(cell_longer,aes(x= Mouse.ID, y = value, fill = cluster))+
+ggplot(cell_longer,aes(x= Mouse.ID, y = value, fill = State))+
     geom_col()+
+    scale_fill_brewer(palette = "Paired")+
     labs(y = "%")+
     facet_wrap( ~Treatment.Group)+
     theme_minimal()+
@@ -86,7 +207,10 @@ ggplot(cell_longer,aes(x= Mouse.ID, y = value, fill = cluster))+
           axis.text.x = element_blank(),
           axis.title.y = element_text(size=16),
           axis.text.y = element_text(size=14),
-          strip.text = element_text(size=20))
+          strip.text = element_text(size=20), 
+         panel.grid.minor = element_blank(),
+         panel.grid.major.x = element_blank(),
+         panel.border = element_rect(fill = NA))
     
 
 ```
@@ -105,19 +229,6 @@ p.overall: Mann-Whitney p-value
 
 ## Pseudobulk analysis: _Aducanumab vs. IgG_
 
-
-
-```{r}
-#| eval: false
-pseudo <- AggregateExpression(microglia, assays = "RNA",
-                              group.by = c("Mouse.ID","final_clusters","Treatment.Group"),
-                              return.seurat = T)
-
-pseudo$pseudobulk_id = paste("cluster",pseudo$final_clusters,pseudo$Treatment.Group,sep="_")
-
-Idents(pseudo) <- "pseudobulk_id"
-```
-
 ```{r}
 
 pseudo <- AggregateExpression(microglia, assays = "RNA",
@@ -133,6 +244,7 @@ Idents(pseudo) <- "Treatment.Group"
 ```{r}
 
 bulk_0 <- FindMarkers(pseudo,
+                      min.pct = 0.3,
                       ident.1 ="Adu",
                       ident.2 = "IgG",
                       test.use = "DESeq2")
@@ -152,3 +264,81 @@ Following treatment, microglia from the Alzheimer’s disease mouse model exhibi
 
 
 
+
+```{r}
+#| fig-width: 5
+EnhancedVolcano(bulk_0,
+    lab = rownames(bulk_0),
+    x = 'avg_log2FC',
+    y = 'p_val',
+    title = "Differentially expressed genes in the Microglia",
+    labFace = "italic",
+    caption = "",
+    # Set the subtitle indicating the comparison groups
+    subtitle = "Adu vs. IgG",
+    FCcutoff = 0.001,
+    legendPosition = 'no',
+   drawConnectors = TRUE,
+    # Connect labels to points in both directions (from left and right)
+    directionConnectors = "both",
+    # Allow for an infinite number of overlapping points to be labeled
+    max.overlaps = Inf,
+    xlim = c(-1,1))
+```
+
+## Module scores
+
+UMAP displaying the combined expression scores or the distribution of individual canonical microglial marker genes, illustrating the transcriptional features that define each cluster.
+
+```{r}
+# Signatures for microglia subtypes
+source("data/microglia_signatures.R")  # must create: signatures <- list(...)
+
+DefaultAssay(microglia) <- "SCT"
+
+sig_names <- names(signatures)
+
+#  keep only genes present in your object to avoid warnings
+signatures <- lapply(signatures, function(g) intersect(g, rownames(microglia)))
+
+# Score: 'name' is a single prefix (Seurat appends 1..N)
+microglia <- AddModuleScore(
+  object   = microglia,
+  features = signatures,
+  name     = "Sig",   # one prefix, not a vector
+  nbin     = 24,
+  ctrl     = 100,
+  seed     = 1
+)
+
+# Rename the last N columns to "<Signature>_Score"
+n_new  <- length(signatures)
+idx    <- (ncol(microglia@meta.data) - n_new + 1):ncol(microglia@meta.data)
+colnames(microglia@meta.data)[idx] <- paste0(sig_names, " Score")
+```
+
+Markers from bibliography to generate the scores
+
+```{r}
+df_long <- imap_dfr(signatures, ~ tibble(Signature = .y, Gene = .x)) |> 
+    pivot_wider(names_from = Signature, values_from = Gene)
+
+kbl(df_long) |>
+  kable_styling("striped")
+```
+
+```{r}
+#| fig-height: 10
+
+signature_plot <- FeaturePlot(microglia, features = c("DAM Score" ,"IRM Score","IEG Score",
+                                                      "Trem2", "Ifi207", "Nfkb1", 
+                                                      "P2ry12","Ccr5","Il1a","Cd74"),
+            min.cutoff = "q20", cols = c( "grey96","red"),
+            combine = F) |> 
+    map(\(x) x+ NoAxes()+NoLegend()+ theme(plot.title = element_text(size = 12, vjust = 0)))
+
+wrap_plots(signature_plot, ncol = 2)
+```
+
+IRM : Interferon-response microglia.\
+IEG : Intermediate early Gene-enriched

@@ -73,7 +73,6 @@ The SCT assay stores log-normalized residual expression values from SCTransform.
 
 library(gtable)
 library(grid)
-library(ggtext)
 library(ggtext) # needed for colored axis labels
 
 genes_of_interest <- c("P2ry12","Trem2","Clec7a","Mrc1","Cd3e","sct_Cd8a",

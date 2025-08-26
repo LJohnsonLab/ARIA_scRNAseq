@@ -1,0 +1,374 @@
+---
+title: "Pseudobulk"
+subtitle: "Run reintegration after cleaning"
+date: today
+embed-resources: true
+execute: 
+  warning: false
+  echo: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(clustree)
+#https://lazappi.github.io/clustree/articles/clustree.html
+library(tidyverse)
+library(Seurat)
+#library(future)
+library(patchwork)
+library(kableExtra)
+library(jsonlite)
+#library(compareGroups)
+#library(corrplot)
+#library(pheatmap)
+#library(monocle3)
+#library(SeuratWrappers)
+library(EnhancedVolcano)
+```
+
+## REINTEGRATION
+
+The integrated scRNAseq dataset of all brain cell populations was subsetted to retain those cells no subsetted out by the "expert committee".
+
+```{r}
+#| eval: false
+
+# Load the full annotated Seurat object containing all brain cell populations
+load("data/20250812-alldata_sctype_annotated_CHLOE_Lance.Rdata")
+alldata_clean$original_clusters <- alldata_clean$seurat_clusters
+
+# Calculate ribosomal gene percentage in the SCT assay
+alldata_clean$ribo_percent <- PercentageFeatureSet(alldata_clean, assay = "SCT", pattern = "^Rp[ls]")
+# Calculate mitochondrial gene percentage in the SCT assay
+alldata_clean$mito_percent <- PercentageFeatureSet(alldata_clean,assay = "SCT", pattern = "^mt")
+# Remove cells with mito percen > 30% (There is none)
+alldata_clean <- subset(alldata_clean,subset = mito_percent<30)
+
+```
+
+```{r}
+#| eval: false
+### some cleaning
+DefaultAssay(alldata_clean) <- "RNA"
+alldata_clean@graphs <- list()
+alldata_clean@reductions <- list()
+alldata_clean[["integrated"]] <- NULL
+alldata_clean[["SCT"]] <- NULL
+
+### empty metadata columns with or with unique values
+alldata_clean@meta.data$Notes...10 <- NULL
+alldata_clean@meta.data$Notes...12 <- NULL
+alldata_clean@meta.data$Strain <- NULL
+alldata_clean@meta.data$Labels <- NULL
+########################################################
+
+# split by sample into a list
+objs <- SplitObject(alldata_clean, split.by = "Mouse.ID")
+# SCTransform
+objs <- map(objs, \(x) SCTransform(x))
+
+
+
+# Select features and prep for integration
+features <- SelectIntegrationFeatures(objs, nfeatures = 2000)
+objs <- PrepSCTIntegration(objs, anchor.features = features)
+
+# Find anchors and integrate
+anchors <- FindIntegrationAnchors(object.list = objs,
+                                  normalization.method = "SCT",
+                                  reduction = "cca",
+                                  anchor.features = features)
+
+aria <- IntegrateData(anchorset = anchors, normalization.method = "SCT")
+
+# Run PCA on variable features from the integrated assay
+aria <- RunPCA(
+  aria,
+  assay   = "integrated",
+  verbose = FALSE
+)
+
+# Set seed for reproducibility
+set.seed(1234)
+
+# Compute nearest neighbors using first 10 PCs
+aria <- FindNeighbors(aria, reduction = "pca", dims = 1:30)
+
+# Perform clustering at multiple resolutions for later comparison
+aria <- FindClusters(aria, resolution = 0.8)
+
+# Select the resolution of interest (0.3) and store as "final_clusters"
+aria$final_clusters_afterReintegration <- aria$integrated_snn_res.0.8
+Idents(aria) <- "final_clusters_afterReintegration"
+
+
+
+aria <- RunUMAP(aria, reduction = "pca", dims = 1:30, verbose = FALSE)
+
+# save(aria, file = "data/20250826-alldata_sctype_annotated_CHLOE_Lance_reintegrated.Rdata")
+
+```
+
+## PCA
+
+```{r}
+#| column: page
+#| fig-width: 12
+
+load("data/20250826-alldata_sctype_annotated_CHLOE_Lance_reintegrated.Rdata")
+
+pca <- PCAPlot(aria)
+elbow <- ElbowPlot(aria, ndims = 50)
+
+pca|elbow
+```
+
+<details>
+
+<summary>__PC details__</summary>
+
+```{r}
+#| fig-width: 12
+#| fig-height: 10
+
+VizDimLoadings(aria, dims = 1:3)
+```
+
+1.  PC1 captures a strong myelination axis, with high loadings for oligodendrocyte and myelin-related genes (*Plp1, Mbp, Mag, Mal, Car2, Cryab*) and opposite contributions from astrocytic (*Ptgds, Enpp2, Edil3*) and microglial (*Hexb, C1qa, Ctss, Cst3*) markers.
+
+2.  PC2 reflects a neuron–astrocyte interaction gradient, driven by the astrocytic ECM regulator *Sparcl1* on one pole and the neuronal signaling gene *Plcb1* on the other.
+
+3.  PC3 highlights synaptic connectivity and neurotransmission, with neuronal adhesion and plasticity genes (*Nrxn1, Ntm, Lsamp, Ctnnd2, Adgrb3, Ntrk2*) and the inhibitory receptor *Gabrb1* loading strongly, balanced by astrocytic transporters (*Slc1a2, Slc4a4*) and *Ptprz1*. Together, these axes describe complementary layers of variance corresponding to myelination, glial–neuronal signaling, and synaptic specialization.
+
+</details>
+```{r}
+#| eval: false
+### highest loading in the first 3 PCs
+PC1 <- TopFeatures(aria,nfeatures = 10, dim = 1)
+PC2 <- TopFeatures(aria,nfeatures = 10, dim = 2)
+PC3 <- TopFeatures(aria,nfeatures = 10, dim = 3)
+
+hpc <- tibble(PC1, PC2, PC3)
+
+kbl(hpc) |> 
+    kable_styling("striped")
+
+```
+
+## UMAP after reintegration
+
+```{r}
+#| column: page
+#| fig-width: 12
+
+
+
+
+Idents(aria) <- "final_clusters_afterReintegration"
+d1 <- DimPlot(aria)
+
+Idents(aria) <- "lance_classification"
+d2 <- DimPlot(aria)+
+    scale_colour_brewer(palette = "Paired")
+
+d1|d2
+
+```
+
+```{r}
+#| column: page
+#| fig-width: 12
+#| fig-height: 4
+
+
+
+genes_of_interest <- c("P2ry12","Trem2","Mrc1","Cd3e","Cd8a",
+                       "Ptprc","Aldh1l1","Aldoc","Mog","Cald1",
+                       "Pdgfra","Ttr","Ccdc153","Slc47a1","Flt1",
+                       "Col1a2","Bgn","Vtn","Kcnj8","Dcx","Snap25")
+
+
+#### load the fiddle function to use multiple violin plots
+source("20250725-helper_functions.R")
+# For help, run: fiddle_help()
+
+
+fiddle(seurat_obj = aria,
+       genes_of_interest = genes_of_interest,
+       classification_col = "lance_classification")
+
+
+
+
+
+```
+
+## Pseudobulk
+
+```{r}
+
+pseudo <- AggregateExpression(aria, assays = "RNA",
+                              group.by = c("Mouse.ID","lance_classification","Treatment.Group"),
+                              return.seurat = T)
+
+pseudo$pseudobulk_id = paste(pseudo$lance_classification , pseudo$Treatment.Group,sep="_")
+
+Idents(pseudo) <- "pseudobulk_id"
+```
+
+### Astrocytes
+
+
+```{r}
+### for help with the anayet (volcano) function, run anayet_help()
+
+astro <- anayet(pseudo,
+       ident1 = "Astrocytes_Adu",
+       ident2 = "Astrocytes_IgG")
+
+kbl(astro$significant_results) |> 
+    kable_styling("striped")
+```
+
+### BAM
+
+```{r}
+### for help with the anayet (volcano) function, run anayet_help()
+
+bam <- anayet(pseudo,
+       ident1 = "BAM_Adu",
+       ident2 = "BAM_IgG")
+
+kbl(bam$significant_results) |> 
+    kable_styling("striped")
+```
+
+### Choroid
+
+```{r}
+### for help with the anayet (volcano) function, run anayet_help()
+
+cho <- anayet(pseudo,
+       ident1 = "Choroid_Adu",
+       ident2 = "Choroid_IgG")
+
+kbl(cho$significant_results) |> 
+    kable_styling("striped")
+```
+
+### Endothelial
+
+```{r}
+### for help with the anayet (volcano) function, run anayet_help()
+
+endo <- anayet(pseudo,
+       ident1 = "Endothelial_Adu",
+       ident2 = "Endothelial_IgG")
+
+
+kbl(endo$significant_results) |> 
+    kable_styling("striped")
+```
+
+
+### Ependymal
+
+```{r}
+### for help with the anayet (volcano) function, run anayet_help()
+
+epe <- anayet(pseudo,
+       ident1 = "Ependymal_Adu",
+       ident2 = "Ependymal_IgG")
+
+
+kbl(epe$significant_results) |> 
+    kable_styling("striped")
+```
+
+
+### Neurons
+
+```{r}
+
+
+neu <- anayet(pseudo,
+       ident1 = "Neurons_Adu",
+       ident2 = "Neurons_IgG")
+
+
+kbl(neu$significant_results) |> 
+    kable_styling("striped")
+```
+
+### NPC
+
+```{r}
+
+
+npc <- anayet(pseudo,
+       ident1 = "NPC_Adu",
+       ident2 = "NPC_IgG")
+
+
+kbl(npc$significant_results) |> 
+    kable_styling("striped")
+```
+
+
+### Oligodendrocytes
+
+```{r}
+
+
+oli <- anayet(pseudo,
+       ident1 = "Oligodendrocytes_Adu",
+       ident2 = "Oligodendrocytes_IgG")
+
+
+kbl(oli$significant_results) |> 
+    kable_styling("striped")
+```
+
+
+### OPC
+
+```{r}
+
+
+opc <- anayet(pseudo,
+       ident1 = "OPC_Adu",
+       ident2 = "OPC_IgG")
+
+
+kbl(opc$significant_results) |> 
+    kable_styling("striped")
+```
+
+### T-cell
+
+```{r}
+
+
+tcell <- anayet(pseudo,
+       ident1 = "T-cell_Adu",
+       ident2 = "T-cell_IgG")
+
+
+kbl(tcell$significant_results) |> 
+    kable_styling("striped")
+```
+
+### VMC
+
+```{r}
+
+
+vmc <- anayet(pseudo,
+       ident1 = "VMC_Adu",
+       ident2 = "VMC_IgG")
+
+
+kbl(vmc$significant_results) |> 
+    kable_styling("striped")
+```
