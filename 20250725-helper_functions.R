@@ -385,3 +385,189 @@ anayet_help <- function() {
     
     cat("==========================================================================\n")
 }
+
+
+
+######################################################################################################
+############################### scProp ###############################################################    
+######################################################################################################
+
+
+
+#' Summarize clusters from a Seurat object
+#'
+#' @description
+#' From a Seurat object, compute and plot the number of cells per cluster, 
+#' plot per-sample cluster proportions (optionally faceted by treatment), 
+#' and build a compareGroups summary table if treatment is available.
+#'
+#' @param obj A Seurat object.
+#' @param cluster_col Character. Column name in obj@meta.data with cluster labels. Default "final_clusters_clean".
+#' @param sample_col Character. Column name in obj@meta.data with sample IDs. Default "Mouse.ID".
+#' @param treatment_col Character (optional). Column name in obj@meta.data with treatment or group labels. 
+#'        If NULL, plots are not faceted and no summary table is created. Default "Treatment.Group".
+#' @param counts_title Character. Title for the counts plot. Default "Total cells".
+#' @param palette Character. RColorBrewer palette name for fills. Default "Paired".
+#' @param percent_digits Integer. Number of digits for percentages. Default 1.
+#'
+#' @return A list with:
+#' \itemize{
+#' \item counts_plot: ggplot object with counts per cluster.
+#' \item proportions_plot: ggplot object with per-sample cluster proportions (faceted if treatment available).
+#' \item summary_table: compareGroups::createTable object if treatment_col exists, otherwise NULL.
+#' \item data_counts: data frame of counts per cluster.
+#' \item data_props_long: long data frame of per-sample cluster percentages.
+#' \item data_props_wide: wide data frame used to build the summary table (if treatment exists).
+#' }
+#'
+#' @examples
+#' res <- scProp(microglia)
+#' res$counts_plot
+#' res$proportions_plot
+#' res$summary_table
+#'
+#' @export
+scProp <- function(obj,
+                   cluster_col = "final_clusters_clean",
+                   sample_col = "Mouse.ID",
+                   treatment_col = NULL,
+                   counts_title = "Total cells",
+                   palette = "Paired",
+                   percent_digits = 1) {
+    
+    # Load packages only if needed
+    pkgs <- c("ggplot2","dplyr","tidyr","tibble","forcats")
+    for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop("Package ", p, " needed.")
+    if (!is.null(treatment_col)) {
+        if (!requireNamespace("compareGroups", quietly = TRUE)) stop("Package compareGroups needed for summary_table.")
+    }
+    
+    # Metadata
+    if (!inherits(obj, "Seurat")) stop("obj must be a Seurat object.")
+    md <- obj@meta.data
+    req_cols <- c(cluster_col, sample_col)
+    if (!is.null(treatment_col)) req_cols <- c(req_cols, treatment_col)
+    missing_cols <- setdiff(req_cols, colnames(md))
+    if (length(missing_cols) > 0) stop("Missing metadata columns: ", paste(missing_cols, collapse = ", "))
+    
+    # Ensure cluster is factor
+    cl_vec <- md[[cluster_col]]
+    if (!is.factor(cl_vec)) cl_vec <- factor(cl_vec)
+    cluster_levels <- levels(cl_vec)
+    
+    # Counts
+    data_counts <- dplyr::count(md, !!rlang::sym(cluster_col), name = "n") |>
+        dplyr::arrange(dplyr::desc(n)) |>
+        dplyr::mutate(!!cluster_col := forcats::fct_reorder(.data[[cluster_col]], n, .desc = TRUE))
+    
+    counts_plot <- ggplot2::ggplot(data_counts, ggplot2::aes(x = .data[[cluster_col]], y = n, fill = .data[[cluster_col]])) +
+        ggplot2::geom_col(alpha = 0.9) +
+        ggplot2::labs(x = NULL, y = NULL, title = counts_title) +
+        ggplot2::coord_flip() +
+        ggplot2::scale_fill_brewer(palette = palette) +
+        ggplot2::theme_bw() +
+        ggplot2::theme(legend.position = "none",
+                       axis.text.x = ggplot2::element_text(size = 15, angle = 25),
+                       axis.text.y = ggplot2::element_text(size = 15),
+                       plot.title = ggplot2::element_text(size = 16, hjust = 0.5))
+    
+    # Per-sample cluster % 
+    data_props_long <- md |>
+        dplyr::count(!!rlang::sym(sample_col), !!rlang::sym(cluster_col), name = "n") |>
+        dplyr::group_by(!!rlang::sym(sample_col)) |>
+        dplyr::mutate(pct = round(100 * n / sum(n), percent_digits)) |>
+        dplyr::ungroup() |>
+        dplyr::rename(.sample = !!rlang::sym(sample_col), .cluster = !!rlang::sym(cluster_col)) |>
+        dplyr::mutate(.cluster = factor(.cluster, levels = cluster_levels))
+    
+    if (!is.null(treatment_col)) {
+        sample_index <- dplyr::distinct(md, !!rlang::sym(sample_col), !!rlang::sym(treatment_col)) |>
+            dplyr::rename(.sample = !!rlang::sym(sample_col), .treat = !!rlang::sym(treatment_col))
+        data_props_long <- dplyr::left_join(data_props_long, sample_index, by = ".sample")
+    }
+    
+    proportions_plot <- ggplot2::ggplot(data_props_long, ggplot2::aes(x = .sample, y = pct, fill = .cluster)) +
+        ggplot2::geom_col() +
+        ggplot2::scale_fill_brewer(palette = palette) +
+        ggplot2::labs(y = "%", x = NULL) +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(axis.text.x = ggplot2::element_blank(),
+                       axis.title.y = ggplot2::element_text(size = 16),
+                       axis.text.y = ggplot2::element_text(size = 14))
+    
+    if (!is.null(treatment_col)) {
+        proportions_plot <- proportions_plot + ggplot2::facet_wrap(~.treat) +
+            ggplot2::theme(strip.text = ggplot2::element_text(size = 20),
+                           panel.grid.minor = ggplot2::element_blank(),
+                           panel.grid.major.x = ggplot2::element_blank(),
+                           panel.border = ggplot2::element_rect(fill = NA, colour = "grey80"))
+    }
+    
+    # Optional compareGroups
+    summary_table <- NULL
+    data_props_wide <- NULL
+    if (!is.null(treatment_col)) {
+        data_props_wide <- data_props_long |>
+            dplyr::select(.sample, .cluster, pct) |>
+            tidyr::pivot_wider(names_from = .cluster, values_from = pct, values_fill = 0) |>
+            dplyr::left_join(sample_index, by = ".sample") |>
+            dplyr::rename(!!sample_col := .sample, !!treatment_col := .treat)
+        
+        frm <- stats::as.formula(paste0(treatment_col, " ~ . - ", sample_col))
+        cg <- compareGroups::compareGroups(frm, data = data_props_wide, method = 2)
+        summary_table <- compareGroups::createTable(cg)
+    }
+    
+    list(counts_plot = counts_plot,
+         proportions_plot = proportions_plot,
+         summary_table = summary_table,
+         data_counts = data_counts,
+         data_props_long = data_props_long,
+         data_props_wide = data_props_wide)
+}
+
+
+
+
+#' Helper for scProp
+#'
+#' @description
+#' Show required metadata columns, the names of returned elements, and how to print the table.
+#'
+#' @param cluster_col Character. Cluster column. Default "final_clusters_clean".
+#' @param sample_col Character. Sample column. Default "Mouse.ID".
+#' @param treatment_col Character or NULL. Treatment column. Default "Treatment.Group".
+#'
+#' @examples
+#' scProp_help()
+#'
+#' @export
+scProp_help <- function(cluster_col = "final_clusters_clean",
+                        sample_col = "Mouse.ID",
+                        treatment_col = "Treatment.Group") {
+    cat("Required metadata columns in obj@meta.data:\n", sep = "")
+    cat(" - cluster_col: '", cluster_col, "'\n", sep = "")
+    cat(" - sample_col : '", sample_col,  "'\n", sep = "")
+    if (!is.null(treatment_col)) {
+        cat(" - treatment_col: '", treatment_col, "' (optional)\n", sep = "")
+    } else {
+        cat(" - treatment_col: <none>\n", sep = "")
+    }
+    
+    cat("\nFunction returns a named list with:\n", sep = "")
+    cat(" counts_plot        (ggplot)\n")
+    cat(" proportions_plot   (ggplot)\n")
+    cat(" summary_table      (compareGroups table or NULL)\n")
+    cat(" data_counts        (data.frame)\n")
+    cat(" data_props_long    (data.frame)\n")
+    cat(" data_props_wide    (data.frame or NULL)\n")
+    
+    cat("\nPrint the summary table (when present):\n", sep = "")
+    cat(" compareGroups::export2md(res$summary_table)\n", sep = "")
+    
+    cat("\nMinimal usage:\n", sep = "")
+    cat(" res <- scProp(obj,\n",
+        "   cluster_col = '", cluster_col, "',\n",
+        "   sample_col = '",  sample_col,  "',\n",
+        "   treatment_col = '", ifelse(is.null(treatment_col), "", treatment_col), "' )\n", sep = "")
+}
