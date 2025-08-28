@@ -2,6 +2,7 @@
 title: "Differences in microglia by sample & treatment"
 subtitle: ""
 date: today
+dpi: 300
 embed-resources: true
 execute: 
   warning: false
@@ -13,16 +14,11 @@ editor_options:
 ```{r}
 
 library(tidyverse)
-library(viridis)
 library(Seurat)
 library(scCustomize) # https://samuel-marsh.github.io/scCustomize/
-# devtools::install_github("pwwang/scplotter")
-library(scplotter) # https://github.com/pwwang/scplotter
-library(EnhancedVolcano)
 library(patchwork)
 library(kableExtra)
 library(compareGroups)
-#library(corrplot)
 library(pheatmap)
 
 # load the previously saved reclustered object 
@@ -54,10 +50,13 @@ microglia <- Rename_Clusters(microglia,
 
 ## Total microglia states
 
-Uniform Manifold Approximation and Projection (UMAP) visualization of `r ncol(microglia)` microglial cells. 
+Uniform Manifold Approximation and Projection (UMAP) visualization of `r ncol(microglia)` microglial cells.
 
 Each point represents a single cell, and cells are colored according to unsupervised clusters identified from transcriptomic profiles.
+
 ```{r}
+#| column: page
+#| fig-width: 12
 
 #############################################################################
 ### UMAP
@@ -69,39 +68,30 @@ DimPlot(microglia, label = F) +
     NoAxes()
 ```
 
-## T0tal cells
 
-Bar plot showing the number of cells assigned to each cluster, highlighting differences in cluster size and relative abundance.
+## Total cells
+
+Bar plot showing the number of cells assigned to each cluster.
+
 ```{r}
+## helper functions
+source("20250725-helper_functions.R")
+# use scProp_help()
 
-#############################################################################
-###### Proportion barplot
-#############################################################################
-dist <-  microglia@meta.data |> 
-    count(final_clusters_clean) |> 
-    arrange(desc(n)) |> 
-    mutate(final_clusters_clean = fct_reorder(final_clusters_clean,desc (n)))
+microglia_prop <- scProp(microglia,
+                         cluster_col = "final_clusters_clean",
+                         sample_col = 'Mouse.ID',
+                         treatment_col = "Treatment.Group")
+```
 
-prop <- ggplot(dist,aes(x= final_clusters_clean,
-                y = n, fill = final_clusters_clean ))+
-    geom_col(alpha = 0.9)+
-    labs(x="",y="", title = "Total cells")+
-    coord_flip()+
-    scale_fill_brewer(palette = "Paired")+
-    theme_bw()+
-    theme(legend.position = "none",
-         axis.text.x = element_text(size=15, angle = 25),
-         axis.text.y = element_text(size=15),
-         plot.title = element_text(size=16, hjust = 0.5))
-
-prop
-ggsave(prop, file = "glia_proportion.png", dpi = 300, bg = "transparent",
-       path = "/Users/arbones/Dropbox/SyncBriefcase/LAB/UK/scRNA_Akhil/Analysis/figures4Lance/figs")
+```{r}
+microglia_prop$counts_plot
 ```
 
 ## Gene Heatmap & hierarchical cluster
 
 Heatmap of normalized expression levels for representative marker genes across clusters, with hierarchical clustering applied to both genes and clusters, providing an overview of the molecular signatures that distinguish microglial states.
+
 ```{r}
 #| column: page
 #| fig-width: 12
@@ -149,152 +139,43 @@ pheatmap(data4cluster,
 
 ```
 
-
-
-
-
 ## Proportions (%) of Microglial States Across Samples and Treatments
 
-
-
 ```{r}
-
-# Reference table mapping each sample ID to its treatment type
-sample_index <- microglia@meta.data |> 
-    # Keep only unique combinations of sample ID (orig.ident) and treatment group (type)
-    distinct(Mouse.ID, Treatment.Group)   
-
-
-# Table of cluster composition per sample, convert counts to percentages, and add treatment info
-cell <- microglia@meta.data |> 
-    # Group cells by sample and Seurat cluster
-    group_by(Mouse.ID, final_clusters_clean) |> 
-    # Count number of cells in each (sample, cluster) combination
-    summarize(n = n()) |> 
-    # Reshape so that sample IDs become columns and values are cell counts
-    pivot_wider(names_from = Mouse.ID, values_from = n) |> 
-    # For all columns except 'final_clusters', convert counts to percentages per cluster
-    mutate(across(-final_clusters_clean, \(x) round(x / sum(x) * 100, 1))) |> 
-    # Make the 'final_clusters' column the row names
-    column_to_rownames("final_clusters_clean") |> 
-    # Transpose so that samples are rows and clusters are columns
-    t() |> 
-    # Convert the matrix back into a standard data frame
-    as.data.frame() |> 
-    # Turn row names (sample IDs) into a column
-    rownames_to_column(var = "Mouse.ID") |> 
-    # Join treatment type information from 'sample_index'
-    inner_join(sample_index, by = "Mouse.ID")
+#| fig-width: 10
+#| fig-height: 4
+microglia_prop$proportions_plot
 ```
-
-
 
 Stacked barplot of the relative abundance of each microglial Seurat-defined cluster in individual samples and compared proportions between the Aducanumab-treated and IgG control groups.\
-
-```{r}
-#| fig-height: 2
-cell_longer <- cell |> 
-    pivot_longer(2:10, names_to = "State") |> 
-    mutate(State = factor(State,levels = levels(microglia$final_clusters_clean)))
-
-ggplot(cell_longer,aes(x= Mouse.ID, y = value, fill = State))+
-    geom_col()+
-    scale_fill_brewer(palette = "Paired")+
-    labs(y = "%")+
-    facet_wrap( ~Treatment.Group)+
-    theme_minimal()+
-    theme(axis.title.x = element_blank(),
-          axis.text.x = element_blank(),
-          axis.title.y = element_text(size=16),
-          axis.text.y = element_text(size=14),
-          strip.text = element_text(size=20), 
-         panel.grid.minor = element_blank(),
-         panel.grid.major.x = element_blank(),
-         panel.border = element_rect(fill = NA))
-    
-
-```
 
 ------------------------------------------------------------------------
 
 ```{r}
 # Compare all variables in 'cell' across treatment groups using compareGroups
-c1 <- compareGroups(Treatment.Group ~.-Mouse.ID, cell, method = 2)
-t1 <- createTable(c1)
-export2md(t1, caption = "")
+export2md(microglia_prop$summary_table, caption = "")
 ```
 
 Values are median % of microglia in that cluster per sample, with IQR.\
 p.overall: Mann-Whitney p-value
 
-## Pseudobulk analysis: _Aducanumab vs. IgG_
 
-```{r}
-
-pseudo <- AggregateExpression(microglia, assays = "RNA",
-                              group.by = c("Mouse.ID","Treatment.Group"),
-                              return.seurat = T)
-
-
-
-Idents(pseudo) <- "Treatment.Group"
-```
-
-
-```{r}
-
-bulk_0 <- FindMarkers(pseudo,
-                      min.pct = 0.3,
-                      ident.1 ="Adu",
-                      ident.2 = "IgG",
-                      test.use = "DESeq2")
-
-
-bulk_0_top <- bulk_0 |> 
-    filter(p_val_adj<0.05)
-
-kbl(bulk_0_top) |> 
-    kable_styling("striped")
-```
-
-
-
-Following treatment, microglia from the Alzheimer’s disease mouse model exhibited a broad transcriptional shift consistent with reduced pro-inflammatory activation and metabolic demand. Several mitochondrial genes (*mt-Nd4l*, *mt-Atp8*) and the amino acid transporter *Slc38a2* were downregulated, suggesting diminished oxidative phosphorylation and nutrient uptake that normally support highly activated microglial states. Key inflammatory mediators, including *Il1a*, *Cxcl1*, *Tnfaip2*, and the microRNA host gene *Mir155hg*, also decreased, indicating attenuation of cytokine release, chemotactic signaling, NF-κB pathway activity, and miR-155–driven immune activation. Concomitant reductions in *Prdm1* and regulatory non-coding transcripts (*Gm13849*, *C430049B03Rik*), together with decreased *Rpl35* and *Man1a*, point to lower transcriptional activity, protein synthesis, and secretory function, while the decline in *H2ac20* implies chromatin remodeling toward a less plastic state. Notably, this general dampening of inflammatory pathways was accompanied by increased expression of *Ccl7*, a chemokine involved in monocyte recruitment. This suggests that while most pro-inflammatory signals were suppressed, the treatment selectively maintained or enhanced pathways favoring controlled immune cell trafficking, potentially reflecting a rebalancing of microglial responses rather than their complete silencing. Collectively, these findings support the notion that the treatment shifts microglia away from a broadly activated phenotype toward a more homeostatic yet immunologically competent state, which may contribute to mitigation of chronic neuroinflammation in Alzheimer’s disease.
-
-
-
-
-
-```{r}
-#| fig-width: 5
-EnhancedVolcano(bulk_0,
-    lab = rownames(bulk_0),
-    x = 'avg_log2FC',
-    y = 'p_val',
-    title = "Differentially expressed genes in the Microglia",
-    labFace = "italic",
-    caption = "",
-    # Set the subtitle indicating the comparison groups
-    subtitle = "Adu vs. IgG",
-    FCcutoff = 0.001,
-    legendPosition = 'no',
-   drawConnectors = TRUE,
-    # Connect labels to points in both directions (from left and right)
-    directionConnectors = "both",
-    # Allow for an infinite number of overlapping points to be labeled
-    max.overlaps = Inf,
-    xlim = c(-1,1))
-```
 
 ## Module scores
 
 UMAP displaying the combined expression scores or the distribution of individual canonical microglial marker genes, illustrating the transcriptional features that define each cluster.
 
 ```{r}
+
+
 # Signatures for microglia subtypes
-source("data/microglia_signatures.R")  # must create: signatures <- list(...)
+source("data/microglia_signatures.R")  
+signatures$TIM <- c("Klf4","Malat1","Tmx4","Jund","Btg2","Fasb","Jun","Fos","Klf2")
+signatures$Homeostatic <- c("P2ry12","P2ry13","Cx3cr1","Maf","Frmd4a","Csf1r","Tmem119")
+signatures$AP <- c("Cp", "H2-Eb1","H2-Ab1","H2-Aa","Cd74","B2m","Cd37")
 
 DefaultAssay(microglia) <- "SCT"
+
 
 sig_names <- names(signatures)
 
@@ -321,24 +202,33 @@ Markers from bibliography to generate the scores
 
 ```{r}
 df_long <- imap_dfr(signatures, ~ tibble(Signature = .y, Gene = .x)) |> 
-    pivot_wider(names_from = Signature, values_from = Gene)
+    group_by(Signature) |> 
+    summarize(genes = paste(Gene, collapse=", ")) |> 
+    filter(Signature%in%c("DAM","IRM","IEG","TIM","AP","Homeostatic"))
+    
 
 kbl(df_long) |>
   kable_styling("striped")
 ```
 
 ```{r}
-#| fig-height: 10
+#| column: screen
+#| fig-width: 15
+#| fig-height: 4
 
 signature_plot <- FeaturePlot(microglia, features = c("DAM Score" ,"IRM Score","IEG Score",
-                                                      "Trem2", "Ifi207", "Nfkb1", 
-                                                      "P2ry12","Ccr5","Il1a","Cd74"),
+                                                      "TIM Score","Homeostatic Score","AP Score"),
             min.cutoff = "q20", cols = c( "grey96","red"),
+            split.by = "Treatment.Group",
             combine = F) |> 
-    map(\(x) x+ NoAxes()+NoLegend()+ theme(plot.title = element_text(size = 12, vjust = 0)))
+    map(\(x) x+ NoAxes()+NoLegend()+ 
+            theme(plot.title = element_text(size = 12, vjust = 0),
+                  panel.border = element_blank()))
 
-wrap_plots(signature_plot, ncol = 2)
+wrap_plots(signature_plot, nrow = 2)
 ```
 
 IRM : Interferon-response microglia.\
-IEG : Intermediate early Gene-enriched
+IEG : Intermediate early Gene-enriched  
+TIM : Terminally inflammatory microglia [@millet2024]  
+AP : Antigen Presenting

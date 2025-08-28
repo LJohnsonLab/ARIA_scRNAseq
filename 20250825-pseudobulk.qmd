@@ -3,6 +3,7 @@ title: "Pseudobulk"
 subtitle: "Run reintegration after cleaning"
 date: today
 embed-resources: true
+dpi: 300
 execute: 
   warning: false
   echo: false
@@ -11,19 +12,13 @@ editor_options:
 ---
 
 ```{r}
-library(clustree)
-#https://lazappi.github.io/clustree/articles/clustree.html
+
 library(tidyverse)
 library(Seurat)
-#library(future)
 library(patchwork)
 library(kableExtra)
 library(jsonlite)
-#library(compareGroups)
-#library(corrplot)
-#library(pheatmap)
-#library(monocle3)
-#library(SeuratWrappers)
+library(compareGroups)
 library(EnhancedVolcano)
 ```
 
@@ -177,32 +172,28 @@ d1|d2
 ```
 
 ```{r}
-#| column: page
-#| fig-width: 12
-#| fig-height: 4
-
-
-
-genes_of_interest <- c("P2ry12","Trem2","Mrc1","Cd3e","Cd8a",
-                       "Ptprc","Aldh1l1","Aldoc","Mog","Cald1",
-                       "Pdgfra","Ttr","Ccdc153","Slc47a1","Flt1",
-                       "Col1a2","Bgn","Vtn","Kcnj8","Dcx","Snap25")
-
-
-#### load the fiddle function to use multiple violin plots
 source("20250725-helper_functions.R")
-# For help, run: fiddle_help()
-
-
-fiddle(seurat_obj = aria,
-       genes_of_interest = genes_of_interest,
-       classification_col = "lance_classification")
-
-
-
-
-
+## scProp_help()
+ag <- scProp(aria,
+             cluster_col = "lance_classification",
+             sample_col = "Mouse.ID",
+             treatment_col = "Treatment.Group")
 ```
+
+```{r}
+ag$counts_plot
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4
+ag$proportions_plot
+```
+
+```{r}
+export2md(ag$summary_table, caption = "")
+```
+
 
 ## Pseudobulk
 
@@ -216,6 +207,20 @@ pseudo$pseudobulk_id = paste(pseudo$lance_classification , pseudo$Treatment.Grou
 
 Idents(pseudo) <- "pseudobulk_id"
 ```
+
+### Microglia
+
+```{r}
+### for help with the anayet (volcano) function, run anayet_help()
+
+micro <- anayet(pseudo,
+       ident1 = "Microglia_Adu",
+       ident2 = "Microglia_IgG")
+
+kbl(micro$significant_results) |> 
+    kable_styling("striped")
+```
+Following treatment, microglia from the Alzheimer’s disease mouse model exhibited a broad transcriptional shift consistent with reduced pro-inflammatory activation and metabolic demand. Several mitochondrial genes (*mt-Nd4l*, *mt-Atp8*) and the amino acid transporter *Slc38a2* were downregulated, suggesting diminished oxidative phosphorylation and nutrient uptake that normally support highly activated microglial states. Key inflammatory mediators, including *Il1a*, *Cxcl1*, *Tnfaip2*, and the microRNA host gene *Mir155hg*, also decreased, indicating attenuation of cytokine release, chemotactic signaling, NF-κB pathway activity, and miR-155–driven immune activation. Concomitant reductions in *Prdm1* and regulatory non-coding transcripts (*Gm13849*, *C430049B03Rik*), together with decreased *Rpl35* and *Man1a*, point to lower transcriptional activity, protein synthesis, and secretory function, while the decline in *H2ac20* implies chromatin remodeling toward a less plastic state. Notably, this general dampening of inflammatory pathways was accompanied by increased expression of *Ccl7*, a chemokine involved in monocyte recruitment. This suggests that while most pro-inflammatory signals were suppressed, the treatment selectively maintained or enhanced pathways favoring controlled immune cell trafficking, potentially reflecting a rebalancing of microglial responses rather than their complete silencing. Collectively, these findings support the notion that the treatment shifts microglia away from a broadly activated phenotype toward a more homeostatic yet immunologically competent state, which may contribute to mitigation of chronic neuroinflammation in Alzheimer’s disease.
 
 ### Astrocytes
 
@@ -372,3 +377,28 @@ vmc <- anayet(pseudo,
 kbl(vmc$significant_results) |> 
     kable_styling("striped")
 ```
+
+
+### Number of DEGs up/down-regululated by aducanumab
+
+```{r}
+updown <- bind_rows(c(cell = "Microglia", micro$significant_results),
+                c(cell = "Oligodendrocytes", oli$significant_results),
+                c(cell = "Endothelial", endo$significant_results),
+                c(cell = "Astrocytes", astro$significant_results),
+                c(cell = "T-cell", tcell$significant_results)) |> 
+    mutate(Regulation = ifelse(avg_log2FC>0, "Up","Down")) |> 
+    group_by(cell, Regulation) |> 
+    summarize(n=n())
+
+
+ggplot(updown, aes(x =cell, y=n, fill = Regulation))+
+    geom_col()+
+    labs(y = "Number of DEGs", x="")+
+    scale_fill_manual(values = c("blue","Red"))+
+    theme_minimal()+
+        theme(axis.title = element_text(size=16),
+              axis.text.y = element_text(size=14),
+              axis.text.x = element_text(size = 14, angle = 25, hjust = 1, vjust = 1))
+```
+
