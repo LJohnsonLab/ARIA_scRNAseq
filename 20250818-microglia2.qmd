@@ -68,7 +68,6 @@ DimPlot(microglia, label = F) +
     NoAxes()
 ```
 
-
 ## Total cells
 
 Bar plot showing the number of cells assigned to each cluster.
@@ -159,8 +158,6 @@ export2md(microglia_prop$summary_table, caption = "")
 Values are median % of microglia in that cluster per sample, with IQR.\
 p.overall: Mann-Whitney p-value
 
-
-
 ## Module scores
 
 UMAP displaying the combined expression scores or the distribution of individual canonical microglial marker genes, illustrating the transcriptional features that define each cluster.
@@ -169,10 +166,17 @@ UMAP displaying the combined expression scores or the distribution of individual
 
 
 # Signatures for microglia subtypes
-source("data/microglia_signatures.R")  
+signatures <- list()
 signatures$TIM <- c("Klf4","Malat1","Tmx4","Jund","Btg2","Fasb","Jun","Fos","Klf2")
-signatures$Homeostatic <- c("P2ry12","P2ry13","Cx3cr1","Maf","Frmd4a","Csf1r","Tmem119")
-signatures$AP <- c("Cp", "H2-Eb1","H2-Ab1","H2-Aa","Cd74","B2m","Cd37")
+signatures$Homeostatic <- c("P2ry13","P2ry12","Cx3cr1","Cst3","Ltc4s","Bin1","Maf",
+                            "Frmd4a","Csf1r","C1qa","Dock8","Stab1","Slcda5","Sparc")
+signatures$AP <- c("Cd74","B2m","Cd37","Napil1","Lgals1","Rpl26","Rps19","Rps8","Tp11","Ftl",
+                   "Rlp39","Rps4x","Rps15a","H2-Eb1", "H2-Ab1", "H2-Aa")
+signatures$DAM <- c("Spp1","Lipa","Apoc1","Ccl3","Fabp5","Trem2","Cxcr4","Gpnmb","Litaf","Cstb",
+                    "Rps18","Rpl11","Rpl37a","Axl","Dbi","Socs8")
+signatures$CRM <- c("Il1b","Ch25h","Padi2","Il4l1","Plek","Tlr2","Junb","C3ar1","Nfkbia","Trem2","Tyrobp")
+signatures$IRM <- c("Ifit2","Il1b","Epsti1","Eif2ak2","Bst2","Tnfsf10","Sp110","Irf1","Tap1","Il4l1","Adar",
+                    "Cd48","Nampt")
 
 DefaultAssay(microglia) <- "SCT"
 
@@ -180,7 +184,7 @@ DefaultAssay(microglia) <- "SCT"
 sig_names <- names(signatures)
 
 #  keep only genes present in your object to avoid warnings
-signatures <- lapply(signatures, function(g) intersect(g, rownames(microglia)))
+signatures <- map(signatures, \(g) intersect(g, rownames(microglia)))
 
 # Score: 'name' is a single prefix (Seurat appends 1..N)
 microglia <- AddModuleScore(
@@ -203,22 +207,25 @@ Markers from bibliography to generate the scores
 ```{r}
 df_long <- imap_dfr(signatures, ~ tibble(Signature = .y, Gene = .x)) |> 
     group_by(Signature) |> 
-    summarize(genes = paste(Gene, collapse=", ")) |> 
-    filter(Signature%in%c("DAM","IRM","IEG","TIM","AP","Homeostatic"))
+    summarize(genes = paste(Gene, collapse=", ")) 
     
 
 kbl(df_long) |>
   kable_styling("striped")
 ```
 
+---
+
+Red dots indicate cells with high signature scores (__top 25%__), while grey represents cells with lower scores
+
 ```{r}
 #| column: screen
 #| fig-width: 15
 #| fig-height: 4
 
-signature_plot <- FeaturePlot(microglia, features = c("DAM Score" ,"IRM Score","IEG Score",
+signature_plot <- FeaturePlot(microglia, features = c("DAM Score" ,"IRM Score","CRM Score",
                                                       "TIM Score","Homeostatic Score","AP Score"),
-            min.cutoff = "q20", cols = c( "grey96","red"),
+            min.cutoff = "q75", cols = c( "grey96","red"),
             split.by = "Treatment.Group",
             combine = F) |> 
     map(\(x) x+ NoAxes()+NoLegend()+ 
@@ -228,7 +235,13 @@ signature_plot <- FeaturePlot(microglia, features = c("DAM Score" ,"IRM Score","
 wrap_plots(signature_plot, nrow = 2)
 ```
 
+Homeostatic  
+DAM: Disease associated microglia   
+AP : Antigen Presenting (HLA/MHC class II)  
 IRM : Interferon-response microglia.\
-IEG : Intermediate early Gene-enriched  
-TIM : Terminally inflammatory microglia [@millet2024]  
-AP : Antigen Presenting
+CRM : Cytokine-Response microglia
+Markers described in [@fumagalli2025]
+
+--- 
+
+TIM : Terminally inflammatory microglia [@millet2024]
