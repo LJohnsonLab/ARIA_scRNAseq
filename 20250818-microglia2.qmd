@@ -61,11 +61,16 @@ Each point represents a single cell, and cells are colored according to unsuperv
 #############################################################################
 ### UMAP
 #############################################################################
-DimPlot(microglia, label = F) +
+
+Idents(microglia) <- "final_clusters_clean"
+
+d1 <- DimPlot(microglia, label = F) +
     scale_colour_brewer(palette = "Paired")+
     labs(title = "Microglia States") +
     theme(plot.title = element_text(size=16, hjust = 0.5))+
     NoAxes()
+
+d1
 ```
 
 ## Total cells
@@ -164,8 +169,8 @@ UMAP displaying the combined expression scores or the distribution of individual
 
 ```{r}
 
-
-# Signatures for microglia subtypes
+# Define gene signatures for different microglial subtypes based on literature
+# Each signature contains marker genes that characterize specific microglial states
 signatures <- list()
 signatures$TIM <- c("Klf4","Malat1","Tmx4","Jund","Btg2","Fasb","Jun","Fos","Klf2")
 signatures$Homeostatic <- c("P2ry13","P2ry12","Cx3cr1","Cst3","Ltc4s","Bin1","Maf",
@@ -178,38 +183,46 @@ signatures$CRM <- c("Il1b","Ch25h","Padi2","Il4l1","Plek","Tlr2","Junb","C3ar1",
 signatures$IRM <- c("Ifit2","Il1b","Epsti1","Eif2ak2","Bst2","Tnfsf10","Sp110","Irf1","Tap1","Il4l1","Adar",
                     "Cd48","Nampt")
 
+
+# Set the default assay to SCT (SCTransform normalized data) for analysis
 DefaultAssay(microglia) <- "SCT"
 
-
+# Store signature names for later use in renaming columns
 sig_names <- names(signatures)
 
-#  keep only genes present in your object to avoid warnings
+# Filter signatures to only include genes present in the dataset
 signatures <- map(signatures, \(g) intersect(g, rownames(microglia)))
 
-# Score: 'name' is a single prefix (Seurat appends 1..N)
+# Calculate module scores for each signature 
+# This computes the average expression of signature genes minus average expression of control genes
 microglia <- AddModuleScore(
-  object   = microglia,
-  features = signatures,
-  name     = "Sig",   # one prefix, not a vector
-  nbin     = 24,
-  ctrl     = 100,
-  seed     = 1
+  object   = microglia,        # Seurat object
+  features = signatures,       # List of gene signatures
+  name     = "Sig",           # Prefix for new column names (Seurat will append 1,2,3...)
+  nbin     = 24,              # Number of bins for background gene selection
+  ctrl     = 100,             # Number of control genes per bin
+  seed     = 1                # Random seed for reproducibility
 )
 
-# Rename the last N columns to "<Signature>_Score"
-n_new  <- length(signatures)
-idx    <- (ncol(microglia@meta.data) - n_new + 1):ncol(microglia@meta.data)
+# Rename the newly created score columns with meaningful names
+# AddModuleScore creates columns named "Sig1", "Sig2", etc.
+# We rename them to "<Signature_Name> Score"
+n_new  <- length(signatures)  # Number of signatures
+idx    <- (ncol(microglia@meta.data) - n_new + 1):ncol(microglia@meta.data)  # Index of new columns
 colnames(microglia@meta.data)[idx] <- paste0(sig_names, " Score")
+
 ```
 
 Markers from bibliography to generate the scores
 
 ```{r}
+# Create a summary table showing genes in each signature
+# This reshapes the signature list into a long format tibble for display
 df_long <- imap_dfr(signatures, ~ tibble(Signature = .y, Gene = .x)) |> 
     group_by(Signature) |> 
     summarize(genes = paste(Gene, collapse=", ")) 
-    
 
+# Display the signature genes in a formatted table
 kbl(df_long) |>
   kable_styling("striped")
 ```
@@ -223,15 +236,19 @@ Red dots indicate cells with high signature scores (__top 25%__), while grey rep
 #| fig-width: 15
 #| fig-height: 4
 
-signature_plot <- FeaturePlot(microglia, features = c("DAM Score" ,"IRM Score","CRM Score",
-                                                      "TIM Score","Homeostatic Score","AP Score"),
-            min.cutoff = "q75", cols = c( "grey96","red"),
-            split.by = "Treatment.Group",
-            combine = F) |> 
-    map(\(x) x+ NoAxes()+NoLegend()+ 
+# Create feature plots showing module scores across UMAP embedding
+signature_plot <- FeaturePlot(microglia, 
+                             features = c("DAM Score" ,"IRM Score","CRM Score",
+                                        "TIM Score","Homeostatic Score","AP Score"),
+                             min.cutoff = "q75",           # Only highlight top 25% of cells
+                             cols = c("grey96","red"),     # Color scale: grey to red
+                             split.by = "Treatment.Group", # Separate plots by treatment
+                             combine = F) |>               # Return list of plots
+    map(\(x) x + NoAxes() + NoLegend() + 
             theme(plot.title = element_text(size = 12, vjust = 0),
                   panel.border = element_blank()))
 
+# Arrange plots in a 2-row layout
 wrap_plots(signature_plot, nrow = 2)
 ```
 
@@ -245,3 +262,60 @@ Markers described in [@fumagalli2025]
 --- 
 
 TIM : Terminally inflammatory microglia [@millet2024]
+
+
+## Microglia states according to [@fumagalli2025]
+
+Using `AddModuleScore` in the previous step, each cell received a numerical score for each signature.   
+Then, for each cell, the maximum score across all signatures was identified, and the corresponding label was assigned as its “dominant phenotype.” This categorical assignment was stored in the metadata under the identity class `score_cluster`.
+
+```{r}
+#| fig-column: page
+#| fig-width: 12
+#| fig-height: 10
+# Assign each cell to the microglial state with the highest module score
+# Extract module score columns from metadata
+md <- microglia@meta.data |> 
+    select(`Homeostatic Score`:`IRM Score`) 
+
+# Find the signature with maximum score for each cell
+max_col <- names(md)[max.col(md)] |> 
+    str_remove(" Score")  # Remove " Score" suffix
+
+# Add the assigned state as a new metadata column
+microglia$score_cluster <- max_col
+
+# Set the identity of cells to their assigned microglial state
+Idents(microglia) <- "score_cluster"
+
+# Create a UMAP plot colored by assigned microglial state
+d2 <- DimPlot(microglia, label = F) +
+    scale_colour_brewer(palette = "Paired") +     # Use paired color palette
+    labs(title = "Microglia 5 States\nfrom bibliography") +
+    theme(plot.title = element_text(size=16, hjust = 0.5)) +
+    NoAxes()
+
+d3 <- DimPlot(microglia, label = F, split.by = "Treatment.Group") +
+    scale_colour_brewer(palette = "Paired") +     # Use paired color palette
+    labs(title = "Microglia 5 States\nfrom bibliography") +
+    theme(plot.title = element_text(size=16, hjust = 0.5)) +
+    NoAxes()
+
+# Display both plots side by side with the previous microglia states plot
+(d1|d2)/d3
+```
+
+```{r}
+prop2 <- scProp(microglia,
+                cluster_col = "score_cluster",
+                sample_col = 'Mouse.ID',
+                treatment_col = 'Treatment.Group' )
+
+prop2$proportions_plot
+```
+
+
+```{r}
+export2md(prop2$summary_table)
+```
+
