@@ -163,6 +163,136 @@ export2md(microglia_prop$summary_table, caption = "")
 Values are median % of microglia in that cluster per sample, with IQR.\
 p.overall: Mann-Whitney p-value
 
+## Probability that a given cell belongs to the specific target cluster
+To quantify changes in microglial cell state composition between Aducanumab-treated and IgG-treated groups, we performed a differential abundance analysis using a generalized linear mixed model (GLMM) framework. We implemented this analysis in R using the lme4 package, treating cellular identity as a binary outcome in a series of "one-vs-rest" logistic regressions for each cluster. The treatment condition served as the fixed effect, while the biological replicate (Mouse ID) was included as a random intercept to account for baseline variability between animals. We calculated the Odds Ratio (OR) and 95% Confidence Interval (CI) from the model coefficients to estimate the magnitude and precision of the treatment effect. Significance was assessed using the Wald Z-test, and results were visualized as a forest plot
+```{r}
+#| column: page
+#| fig-width: 12
+library(lme4)
+library(patchwork)
+
+# 1. Extract metadata from your Seurat object
+df <- microglia@meta.data |> 
+  mutate(
+    Treatment.Group = factor(Treatment.Group, levels = c("IgG", "Adu"))) |>
+  select(
+    cluster = final_clusters_clean,  # The cell state/cluster column
+    treatment = Treatment.Group,            # Fixed effect: Aducanumab vs IgG1
+    sample = Mouse.ID                # Random effect: Biological replicate
+  )
+
+cluster_order <- c(
+  "NFkB/IEG Activated",
+  "Homeostatic (Activation competent)",
+  "DAM (Early/Intermediate)",
+  "Remodeling / Injury response",
+  "Homeostatic (canonical)",
+  "DAM (late)",
+  "Antigen presenting",
+  "Interferon responsive",
+  "Proliferating"
+)
+
+# 2. Define a function to calculate OR and CI for a specific cluster
+# This replicates the 'one-vs-rest' logistic regression used in MASC
+masc <- function(target_cluster, data) {
+  
+  # Create a binary target variable (1 = target cluster, 0 = all others)
+  model_data <- data %>%
+    mutate(is_cluster = ifelse(cluster == target_cluster, 1, 0))
+  
+  # Run the Generalized Linear Mixed Model (GLMM)
+  # Family = binomial (logistic regression)
+  # Fixed effect = treatment; Random effect = sample/mouse
+  model <- glmer(is_cluster ~ treatment + (1 | sample), 
+                 data = model_data, 
+                 family = binomial, 
+                 nAGQ = 0) # nAGQ=0 speeds up convergence for large datasets
+  
+  # Extract coefficients (Log Odds)
+  coefs <- summary(model)$coefficients
+  
+  # The treatment effect is usually the second coefficient (after intercept)
+  # Check your specific coefficient names with rownames(coefs)
+  log_or <- coefs[2, "Estimate"]
+  se     <- coefs[2, "Std. Error"]
+  p_val  <- coefs[2, "Pr(>|z|)"]
+  
+  # Convert Log Odds to Odds Ratio (OR) and calculate 95% CI
+  res <- tibble(
+    cluster = target_cluster,
+    OR = exp(log_or),
+    lower_95 = exp(log_or - 1.96 * se),
+    upper_95 = exp(log_or + 1.96 * se),
+    p_value = p_val
+  )
+  return(res)
+}
+
+# 3. Apply this function to every cluster in your dataset
+all_clusters <- unique(df$cluster)
+results <- map_dfr(all_clusters, \(x) masc(x, df)) |> 
+  mutate(
+    # Create formatted labels for the table
+    stats_label = sprintf("%.2f (%.2f–%.2f)", OR, lower_95, upper_95),
+    p_label = sprintf("%.2f", p_value),
+    # Enforce the specific factor order for plotting
+    cluster = factor(cluster, levels = rev(cluster_order)))
+
+# 4. Display the results
+
+my_colors <- c(
+  "NFkB/IEG Activated" = "#E76F51",               # Salmon
+  "Homeostatic (Activation competent)" = "#F4A261", # Orange
+  "DAM (Early/Intermediate)" = "#E9C46A",         # Yellow
+  "Remodeling / Injury response" = "#A7C957",     # Light Green
+  "Homeostatic (canonical)" = "#2A9D8F",          # Teal
+  "DAM (late)" = "#264653",                       # Dark Blue
+  "Antigen presenting" = "#219EBC",               # Cyan
+  "Interferon responsive" = "#8ECAE6",            # Light Blue
+  "Proliferating" = "#B5179E"                     # Purple
+)
+# Create the forest plot
+# --- Left Panel: Forest Plot ---
+p_plot <- ggplot(results, aes(x = OR, y = cluster, color = cluster)) +
+  geom_vline(xintercept = 1, linetype = "solid", color = "gray80") + 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95), 
+                 height = 0.3, size = 0.8) +
+  geom_point(shape = 15, size = 4) + # Square shape matches the paper
+  scale_color_manual(values = my_colors) +
+  #scale_x_continuous(breaks = c( -1,-0.5, 0, 1), limits = c(-1.2, 1)) +
+  labs(x = "Odds Ratio (Aducanumab /IgG1)", y = NULL) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+    axis.text.x = element_text(size = 10, color = "black"),
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+# --- Right Panel: Statistics Table ---
+p_table <- results %>%
+  pivot_longer(cols = c(stats_label, p_label), names_to = "metric", values_to = "label") %>%
+  mutate(x_pos = ifelse(metric == "stats_label", 1, 2)) %>%
+  ggplot(aes(y = cluster, x = x_pos, label = label)) +
+  geom_text(hjust = 0.5, size = 3.5, color = "black") +
+  scale_x_continuous(limits = c(0.5, 2.5), breaks = c(1, 2), 
+                     labels = c("OR\n(95% CI)", "P"), position = "top") +
+  theme_void() +
+  theme(
+    axis.text.x.top = element_text(face = "bold", size = 10),
+    plot.margin = margin(t = 10, r = 10, b = 10, l = 0)
+  )
+
+# --- Combine Panels ---
+final_figure <- p_plot + p_table + plot_layout(widths = c(2, 1))
+
+print(final_figure)
+```
+
+Aducanumab treatment induced distinct shifts in the proportional abundance of specific microglial states compared to IgG controls. We observed a significant expansion of the "DAM (Early/Intermediate)" population (OR = 1.37, 95% CI: 1.19–1.58, P < 0.01) and the "Interferon responsive" cluster (OR = 1.27, 95% CI: 1.08–1.50, P < 0.01), suggesting a drug-induced transition toward reactive phenotypes. Conversely, this expansion was mirrored by a significant reduction in the "Homeostatic (Activation competent)" state (OR = 0.74, 95% CI: 0.67–0.83, P < 0.01) and the "NFkB/IEG Activated" state (OR = 0.87, 95% CI: 0.77–0.98, P = 0.03). The "Remodeling / Injury response" cluster showed a borderline increase (P = 0.05), while canonical homeostatic microglia, antigen-presenting cells, late-stage DAMs, and proliferating cells remained stable with no statistically significant differences between treatment groups.
+
 ## Module scores
 
 UMAP displaying the combined expression scores or the distribution of individual canonical microglial marker genes, illustrating the transcriptional features that define each cluster.
