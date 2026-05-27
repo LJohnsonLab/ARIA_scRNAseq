@@ -8,6 +8,7 @@
 Icon
 
 # R
+.Rprofile
 .Rhistory
 .Rapp.history
 .RData
@@ -29,8 +30,11 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 
-# Large data objects (hosted on Dropbox, see README)
-data/
+CLAUDE.md
+
+# Large data objects (hosted on Dropbox, see README); keep the lineage doc
+data/*
+!data/README.md
 
 # test qmd
 20250903-scanpy.*
