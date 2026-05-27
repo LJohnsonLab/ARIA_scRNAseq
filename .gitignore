@@ -1,7 +1,37 @@
-.Rproj.user
-.Rhistory
-.RData
-.Ruserdata
+# macOS
 .DS_Store
-data/
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+Icon
+
+# R
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+.Ruserdata
+.Rproj.user/
+.Renviron
+.httr-oauth
+*-Ex.R
+
+# Quarto / rendered artifacts (note: docs/ is kept tracked, it serves GitHub Pages)
 /.quarto/
+*_cache/
+*_files/
+
+# Python / reticulate
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+
+# Large data objects (hosted on Dropbox, see README)
+data/
+
+# test qmd
+20250903-scanpy.*
+20250829-trajectory.qmd
